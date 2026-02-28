@@ -81,7 +81,7 @@ async def setup_effects(chroma: ChromaSession, device: ChromaDevice) -> Effects:
 
 async def amain():
     client = LeagueClient()
-    print("League session startup...")
+    print("Waiting for League session...")
 
     async with ChromaSession(CHROMA_APP_INFO) as chroma:
         device = ChromaDevice.Keyboard
