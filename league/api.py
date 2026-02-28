@@ -193,9 +193,10 @@ class LeagueClient(APIWrapper):
         )
 
     def on_first_brick(self, event: GameEvent):
-        turret = Turret.from_str(event.TurretKilled)
+        turret = Turret.from_str(event.TurretKilled) if event.TurretKilled else None
+        location = turret.to_str() if turret else "unknown turret"
         self.print_timestamped_message(
-            event, f"First brick on {turret.to_str()} claimed by {event.KillerName}"
+            event, f"First brick on {location} claimed by {event.KillerName}"
         )
 
     def on_champion_kill(self, event: GameEvent):

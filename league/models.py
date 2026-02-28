@@ -158,7 +158,7 @@ class ActivePlayer:
     abilities: Abilities
     championStats: ChampionStats
     currentGold: float
-    fullRunes: FullRunes
+    fullRunes: Optional[FullRunes]
     level: int
     riotId: str
     riotIdGameName: str
@@ -169,7 +169,7 @@ class ActivePlayer:
     def __post_init__(self):
         self.abilities = Abilities(**self.abilities)
         self.championStats = ChampionStats(**self.championStats)
-        self.fullRunes = FullRunes(**self.fullRunes)
+        self.fullRunes = FullRunes(**self.fullRunes) if self.fullRunes else None
 
 
 @dataclass
@@ -186,19 +186,19 @@ class Player:
     riotId: str
     riotIdGameName: str
     riotIdTagLine: str
-    runes: PlayerRunes
+    runes: Optional[PlayerRunes]
     scores: Scores
-    screenPositionBottom: str
-    screenPositionCenter: str
     skinID: int
     skinName: str
     summonerName: str
     summonerSpells: SummonerSpells
     team: GameTeam
+    screenPositionBottom: Optional[str] = None
+    screenPositionCenter: Optional[str] = None
 
     def __post_init__(self):
         self.items = [Item(**i) for i in self.items]
-        self.runes = PlayerRunes(**self.runes)
+        self.runes = PlayerRunes(**self.runes) if self.runes else None
         self.scores = Scores(**self.scores)
         self.summonerSpells = SummonerSpells(**self.summonerSpells)
         self.team = GameTeam(self.team)
@@ -288,6 +288,8 @@ class TurretTier(Enum):
     Inhibitor = 1
     Inner = 2
     Outer = 3
+    ARAM_Outer = 4
+    ARAM_Inner = 5
 
 @dataclass
 class Turret:
