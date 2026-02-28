@@ -1,5 +1,5 @@
 [project]
-name = "league-of-snakes"
+name = "league-of-chroma"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -13,6 +13,13 @@ dependencies = [
     "rich>=14.3.3",
     "typer>=0.24.1",
 ]
+
+[build-system]
+requires = ["uv_build>=0.9.21"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "league"
 
 [tool.uv.sources]
 chroma = { path = "../rzr-chroma", editable = true }

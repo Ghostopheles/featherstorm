@@ -14,3 +14,4 @@ data/
 *.pem
 logs/
 ref/
+.ruff_cache/
