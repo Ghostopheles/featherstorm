@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Read(//x/rzr-chroma//**)"
+      "Read(//x/rzr-chroma//**)",
+      "Read(//x/govee/**)"
     ]
   }
 }

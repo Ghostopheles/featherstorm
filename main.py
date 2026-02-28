@@ -187,9 +187,6 @@ async def amain():
 
             # don't forget about govee!
             for dev in govee_listener.devices.values():
-                dev.set_power_state(True)
-                dev.set_brightness(100)
-
                 color = team_to_govee_color.get(player_team)
                 dev.set_color_and_temperature(color)
 

@@ -22,9 +22,9 @@ def format_assists(assists):
 class APIWrapper:
     client: httpx.AsyncClient
 
-    async def get(self, endpoint):
+    async def get(self, endpoint, *args, **kwargs):
         try:
-            res = await self.client.get(endpoint)
+            res = await self.client.get(endpoint, *args, **kwargs)
             res.raise_for_status()
             return res.json()
         except httpx.ConnectError:
