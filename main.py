@@ -10,6 +10,7 @@ from chroma import (ChromaSession,
                     ChromaEffectType,
                     ChromaColor,
                     ChromaDevice,
+                    ChromaAnimation,
 )
 
 from league.api import LeagueClient
@@ -20,9 +21,6 @@ DATA_PATH = SELF_PATH / "data"
 
 DEFAULT_PLAYER_NAME = "Dallas N Tollway"
 
-FLASH_CURVE = [0.1, 0.3, 0.5, 0.7, 0.9, 1.0, 1.0, 0.9, 0.7, 0.5, 0.3, 0.1]
-SHORT_FLASH_CURVE = [0.3, 0.6, 1.0, 0.6, 0.3]  # 5 frames ≈ 0.5s
-FLASH_FRAME_DELAY = 0.1  # seconds per frame
 TEAMMATE_DIM_FACTOR = 0.4  # Peak brightness for teammate events
 
 CHROMA_APP_INFO = {
@@ -46,15 +44,15 @@ def scale_color(color: ChromaColor, factor: float) -> ChromaColor:
 
 @dataclass
 class Effects:
-    blue: str                       # ORDER team base
-    red: str                        # CHAOS team base
-    white: str                      # spectator base
-    kill_flash: list[str]           # bright gold (my kill)
-    teammate_kill_flash: list[str]  # dim gold (teammate kill)
-    objective_flash: list[str]      # purple, dim→bright→dim
-    turret_flash: list[str]         # bright white (my turret kill)
-    teammate_turret_flash: list[str]  # dim white (teammate turret kill)
-    first_brick_flash: list[str]    # short white (my FirstBrick)
+    blue: str                                                    # ORDER team base
+    red: str                                                     # CHAOS team base
+    white: str                                                   # spectator base
+    kill_flash: dict                                             # bright gold (my kill)
+    teammate_kill_flash: dict                                    # dim gold (teammate kill)
+    objective_flash: dict                                        # purple flash
+    turret_flash: dict                                           # bright white (my turret kill)
+    teammate_turret_flash: dict                                  # dim white (teammate turret kill)
+    first_brick_flash: dict                                      # short white (my FirstBrick)
 
 
 async def setup_effects(chroma: ChromaSession, device: ChromaDevice) -> Effects:
@@ -63,19 +61,23 @@ async def setup_effects(chroma: ChromaSession, device: ChromaDevice) -> Effects:
         e.set_single_color_param(color)
         return await chroma.create_effect(device, e)
 
-    async def flash_frames(color: ChromaColor, curve: list[float] = FLASH_CURVE) -> list[str]:
-        return [await static(scale_color(color, f)) for f in curve]
+    def make_flash(color: ChromaColor, *, steps=10, flash_duration=0.05, total_fade_duration=1.0):
+        return {
+            GameTeam.ORDER: ChromaAnimation.flash_fade(color, ChromaColor.blue(),  steps=steps, flash_duration=flash_duration, total_fade_duration=total_fade_duration),
+            GameTeam.CHAOS: ChromaAnimation.flash_fade(color, ChromaColor.red(),   steps=steps, flash_duration=flash_duration, total_fade_duration=total_fade_duration),
+            None:           ChromaAnimation.flash_fade(color, ChromaColor.white(), steps=steps, flash_duration=flash_duration, total_fade_duration=total_fade_duration),
+        }
 
     return Effects(
         blue=await static(ChromaColor.blue()),
         red=await static(ChromaColor.red()),
         white=await static(ChromaColor.white()),
-        kill_flash=await flash_frames(ChromaColor.gold()),
-        teammate_kill_flash=await flash_frames(scale_color(ChromaColor.gold(), TEAMMATE_DIM_FACTOR)),
-        objective_flash=await flash_frames(ChromaColor.purple()),
-        turret_flash=await flash_frames(ChromaColor.white()),
-        teammate_turret_flash=await flash_frames(scale_color(ChromaColor.white(), TEAMMATE_DIM_FACTOR)),
-        first_brick_flash=await flash_frames(ChromaColor.white(), SHORT_FLASH_CURVE),
+        kill_flash=make_flash(ChromaColor.gold()),
+        teammate_kill_flash=make_flash(scale_color(ChromaColor.gold(), TEAMMATE_DIM_FACTOR)),
+        objective_flash=make_flash(ChromaColor.purple()),
+        turret_flash=make_flash(ChromaColor.white()),
+        teammate_turret_flash=make_flash(scale_color(ChromaColor.white(), TEAMMATE_DIM_FACTOR)),
+        first_brick_flash=make_flash(ChromaColor.white(), steps=5, total_fade_duration=0.5),
     )
 
 
@@ -87,14 +89,13 @@ async def amain():
         device = ChromaDevice.Keyboard
         effects = await setup_effects(chroma, device)
 
-        current_base_effect_id = None
         active_player_name = None
         active_player_team = None
         player_teams: dict[str, GameTeam] = {}
         player_champions: dict[str, str] = {}
 
         async def on_game_start(_: GameEvent):
-            nonlocal current_base_effect_id, active_player_name, active_player_team
+            nonlocal active_player_name, active_player_team
 
             active = await client.get_active_player()
             active_player_name = active.riotIdGameName if active else DEFAULT_PLAYER_NAME
@@ -112,13 +113,10 @@ async def amain():
                 player_team = GameTeam.SPECTATOR
 
             if player_team == GameTeam.ORDER:
-                current_base_effect_id = effects.blue
                 await chroma.set_effect(effects.blue)
             elif player_team == GameTeam.CHAOS:
-                current_base_effect_id = effects.red
                 await chroma.set_effect(effects.red)
             elif player_team == GameTeam.SPECTATOR:
-                current_base_effect_id = effects.white
                 await chroma.set_effect(effects.white)
             else:
                 print("team???????????")
@@ -136,33 +134,26 @@ async def amain():
 
             client.format_player = format_player
 
-        async def flash(frame_ids: list[str]):
-            for fid in frame_ids:
-                await chroma.set_effect(fid)
-                await asyncio.sleep(FLASH_FRAME_DELAY)
-            if current_base_effect_id is not None:
-                await chroma.set_effect(current_base_effect_id)
-
         async def on_champion_kill(event: GameEvent):
             killer = event.KillerName
             if killer == active_player_name:
-                asyncio.create_task(flash(effects.kill_flash))
+                asyncio.create_task(chroma.play_animation(effects.kill_flash[active_player_team], device))
             elif player_teams.get(killer) == active_player_team:
-                asyncio.create_task(flash(effects.teammate_kill_flash))
+                asyncio.create_task(chroma.play_animation(effects.teammate_kill_flash[active_player_team], device))
 
         async def on_turret_killed(event: GameEvent):
             killer = event.KillerName
             if killer == active_player_name:
-                asyncio.create_task(flash(effects.turret_flash))
+                asyncio.create_task(chroma.play_animation(effects.turret_flash[active_player_team], device))
             elif player_teams.get(killer) == active_player_team:
-                asyncio.create_task(flash(effects.teammate_turret_flash))
+                asyncio.create_task(chroma.play_animation(effects.teammate_turret_flash[active_player_team], device))
 
         async def on_first_brick(event: GameEvent):
             if event.KillerName == active_player_name:
-                asyncio.create_task(flash(effects.first_brick_flash))
+                asyncio.create_task(chroma.play_animation(effects.first_brick_flash[active_player_team], device))
 
         async def on_horde_herald_baron_kill(_: GameEvent):
-            asyncio.create_task(flash(effects.objective_flash))
+            asyncio.create_task(chroma.play_animation(effects.objective_flash[active_player_team], device))
 
         client.add_event_callback(GameEventType.GameStart, on_game_start)
         client.add_event_callback(GameEventType.ChampionKill, on_champion_kill)
@@ -185,7 +176,6 @@ async def amain():
 
             print("League client connected.")
             client.reset()
-            current_base_effect_id = None
             active_player_name = None
             active_player_team = None
             player_teams.clear()
