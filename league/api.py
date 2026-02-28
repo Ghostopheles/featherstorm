@@ -77,6 +77,7 @@ class LeagueClient(APIWrapper):
         )
         self.last_event_count = 0
         self.callbacks = {}
+        self.format_player: Callable[[str], str] = lambda name: name
 
     async def get_all_game_data(self) -> AllGameData:
         return AllGameData(**await self.get("/allgamedata"))
@@ -134,6 +135,11 @@ class LeagueClient(APIWrapper):
 
     def print_timestamped_message(self, event: GameEvent, message: str):
         print(f"{event.get_formatted_timestamp()}: {message}")
+
+    def format_assists(self, assisters) -> str:
+        if not assisters:
+            return ""
+        return ", assisted by: " + ", ".join(self.format_player(a) for a in assisters)
 
     async def try_fire_callbacks_for_event(self, event: GameEvent):
         eventName = event.EventName
@@ -193,88 +199,88 @@ class LeagueClient(APIWrapper):
 
     def on_first_blood(self, event: GameEvent):
         self.print_timestamped_message(
-            event, f"First blood claimed by {event.Recipient}"
+            event, f"First blood claimed by {self.format_player(event.Recipient)}"
         )
 
     def on_first_brick(self, event: GameEvent):
         turret = Turret.from_str(event.TurretKilled) if event.TurretKilled else None
         location = turret.to_str() if turret else "unknown turret"
         self.print_timestamped_message(
-            event, f"First brick on {location} claimed by {event.KillerName}"
+            event, f"First brick on {location} claimed by {self.format_player(event.KillerName)}"
         )
 
     def on_champion_kill(self, event: GameEvent):
-        killer = event.KillerName
-        victim = event.VictimName
+        killer = self.format_player(event.KillerName)
+        victim = self.format_player(event.VictimName)
 
         msg = f"{killer} has slain {victim}"
-        msg = msg + event.get_formatted_assists()
+        msg = msg + self.format_assists(event.Assisters)
 
         self.print_timestamped_message(event, msg)
 
     def on_turret_killed(self, event: GameEvent):
         turret = Turret.from_str(event.TurretKilled)
-        killer = event.KillerName
+        killer = self.format_player(event.KillerName)
 
-        msg = f"{turret.to_str()} was destroyed by [bold red]{killer}[/bold red]"
-        msg = msg + event.get_formatted_assists()
+        msg = f"{turret.to_str()} was destroyed by {killer}"
+        msg = msg + self.format_assists(event.Assisters)
 
         self.print_timestamped_message(event, msg)
 
     def on_inhib_killed(self, event: GameEvent):
         inhib = event.InhibKilled
-        killer = event.KillerName
+        killer = self.format_player(event.KillerName)
 
         msg = f"{inhib} was destroyed by {killer}"
-        msg = msg + event.get_formatted_assists()
+        msg = msg + self.format_assists(event.Assisters)
 
         self.print_timestamped_message(event, msg)
 
     def on_dragon_killed(self, event: GameEvent):
         dragonType = event.DragonType
-        killer = event.KillerName
+        killer = self.format_player(event.KillerName)
         stolen = event.Stolen
 
         msg = (
             f"The {dragonType} dragon was {"stolen" if stolen else "slain"} by {killer}"
         )
-        msg = msg + event.get_formatted_assists()
+        msg = msg + self.format_assists(event.Assisters)
 
         self.print_timestamped_message(event, msg)
 
     def on_herald_killed(self, event: GameEvent):
-        killer = event.KillerName
+        killer = self.format_player(event.KillerName)
         stolen = event.Stolen
 
         msg = f"The Rift Herald was {"stolen" if stolen else "slain"} by {killer}"
-        msg = msg + event.get_formatted_assists()
+        msg = msg + self.format_assists(event.Assisters)
 
         self.print_timestamped_message(event, msg)
 
     def on_baron_killed(self, event: GameEvent):
-        killer = event.KillerName
+        killer = self.format_player(event.KillerName)
         stolen = event.Stolen
 
         msg = f"Baron Nashor was {"stolen" if stolen else "slain"} by {killer}"
-        msg = msg + event.get_formatted_assists()
+        msg = msg + self.format_assists(event.Assisters)
 
         self.print_timestamped_message(event, msg)
 
     def on_horde_killed(self, event: GameEvent):
-        killer = event.KillerName
+        killer = self.format_player(event.KillerName)
         stolen = event.Stolen
 
         msg = f"A grub has been {"stolen" if stolen else "slain"} by {killer}"
-        msg = msg + event.get_formatted_assists()
+        msg = msg + self.format_assists(event.Assisters)
 
         self.print_timestamped_message(event, msg)
 
     def on_multikill(self, event: GameEvent):
-        msg = f"{event.get_killstreak_str()} for {event.KillerName}"
+        msg = f"{event.get_killstreak_str()} for {self.format_player(event.KillerName)}"
         self.print_timestamped_message(event, msg)
 
     def on_ace(self, event: GameEvent):
-        msg = f"{event.Acer} has scored an ace for {event.AcingTeam}"
+        msg = f"{self.format_player(event.Acer)} has scored an ace for {event.AcingTeam}"
         self.print_timestamped_message(event, msg)
 
     def on_game_end(self, event: GameEvent):

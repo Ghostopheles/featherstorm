@@ -91,6 +91,7 @@ async def amain():
         active_player_name = None
         active_player_team = None
         player_teams: dict[str, GameTeam] = {}
+        player_champions: dict[str, str] = {}
 
         async def on_game_start(_: GameEvent):
             nonlocal current_base_effect_id, active_player_name, active_player_team
@@ -101,6 +102,7 @@ async def amain():
             all_data = await client.get_all_game_data()
             for player in all_data.allPlayers:
                 player_teams[player.riotIdGameName] = player.team
+                player_champions[player.riotIdGameName] = player.championName
 
             player_team = player_teams.get(active_player_name) if active else None
             active_player_team = player_team
@@ -120,6 +122,19 @@ async def amain():
                 await chroma.set_effect(effects.white)
             else:
                 print("team???????????")
+
+            def format_player(name: str) -> str:
+                team = player_teams.get(name)
+                champion = player_champions.get(name)
+                display = f"{name} ({champion})" if champion else name
+                if team == GameTeam.ORDER:
+                    return f"[bold blue]{display}[/bold blue]"
+                elif team == GameTeam.CHAOS:
+                    return f"[bold red]{display}[/bold red]"
+                else:
+                    return display
+
+            client.format_player = format_player
 
         async def flash(frame_ids: list[str]):
             for fid in frame_ids:
@@ -174,6 +189,8 @@ async def amain():
             active_player_name = None
             active_player_team = None
             player_teams.clear()
+            player_champions.clear()
+            client.format_player = lambda name: name
 
             while True:  # active polling state: every 250ms
                 try:
