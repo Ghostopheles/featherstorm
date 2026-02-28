@@ -278,10 +278,12 @@ class AllGameData:
         self.events = [GameEvent(**e) for e in self.events["Events"]]
         self.gameData = GameData(**self.gameData)
 
+
 class Lane(Enum):
     Bottom = 0
     Middle = 1
     Top = 2
+
 
 class TurretTier(Enum):
     Nexus = 0
@@ -290,6 +292,7 @@ class TurretTier(Enum):
     Outer = 3
     ARAM_Outer = 4
     ARAM_Inner = 5
+
 
 @dataclass
 class Turret:

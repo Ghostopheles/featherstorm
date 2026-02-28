@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from typing import Optional
 
+
 @dataclass
 class MyChampSelection:
     assignedPosition: str
@@ -30,6 +31,7 @@ class MyChampSelection:
     team: int
     wardSkinId: int
 
+
 @dataclass
 class SummonerRerollPoints:
     currentPoints: int
@@ -37,6 +39,7 @@ class SummonerRerollPoints:
     numberOfRolls: int
     pointsCostToRoll: int
     pointsToReroll: int
+
 
 @dataclass
 class Summoner:

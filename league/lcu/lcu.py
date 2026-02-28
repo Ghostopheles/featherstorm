@@ -13,6 +13,7 @@ RIOT_USERNAME = "riot"
 DRAGON_PATH = Path("./data/dragon")
 DRAGON_PATH.mkdir(parents=True, exist_ok=True)
 
+
 class APIClient:
     client: httpx.AsyncClient
 
@@ -24,12 +25,13 @@ class APIClient:
         except httpx.HTTPStatusError as e:
             print(e.response.json())
             raise e
-    
+
     async def get(self, *args, **kwargs):
         return await self._make_request("GET", *args, **kwargs)
-    
+
     async def post(self, *args, **kwargs):
         return await self._make_request("POST", *args, **kwargs)
+
 
 class CommunityDataDragon(APIClient):
     def __init__(self):
@@ -42,7 +44,7 @@ class CommunityDataDragon(APIClient):
         url = "https://ddragon.leagueoflegends.com/api/versions.json"
         res = httpx.get(url).json()
         return res[0]
-    
+
     def check_champion_cache(self, championID: int) -> Optional[dict]:
         path = DRAGON_PATH / "champion" / f"{championID}.json"
         print(path.resolve())
@@ -66,7 +68,7 @@ class CommunityDataDragon(APIClient):
         data = await self.get(f"/champion/{championID}/data")
         self.write_to_champion_cache(championID, data)
         return data
-        
+
 
 @dataclass(frozen=True, slots=True)
 class LCULockfileData:
@@ -75,6 +77,7 @@ class LCULockfileData:
     Port: int
     Password: str
     Protocol: str
+
 
 class LCUClient(APIClient):
     def __init__(self, client_install_path: Path):
@@ -87,7 +90,7 @@ class LCUClient(APIClient):
             auth=httpx.BasicAuth(
                 username=RIOT_USERNAME,
                 password=self._lockfile.Password,
-            )
+            ),
         )
 
         self.dragon = CommunityDataDragon()
@@ -96,10 +99,10 @@ class LCUClient(APIClient):
         lockfile_path = client_install_path / "lockfile"
         if not lockfile_path.exists():
             raise FileNotFoundError("Client lockfile not found")
-        
+
         with open(lockfile_path) as f:
             text = f.read()
-        
+
         return LCULockfileData(*text.split(":"))
 
     async def get_locked_champion(self) -> Optional[int]:
@@ -115,7 +118,7 @@ class LCUClient(APIClient):
         data = await self.dragon.get_champion(selection.championPickIntent)
         print(data.get("name"))
         return selection
-    
+
     async def create_custom_game_lobby(self):
         lobby_config = {
             "customGameLobby": {
@@ -124,30 +127,28 @@ class LCUClient(APIClient):
                     "gameMutator": "",
                     "mutators": {"id": 1},
                     "gameServerRegion": "",
-                    "mapId": 11, 
+                    "mapId": 11,
                     "spectatorPolicy": "AllAllowed",
                     "teamSize": 5,
                     "maxPlayerCount": 10,
-                    "hidePublicly": True
+                    "hidePublicly": True,
                 },
                 "lobbyName": "Clever Lobby Name Here",
                 "lobbyPassword": "corgi",
             },
-            "isCustom": True
+            "isCustom": True,
         }
         res = await self.post("/lol-lobby/v2/lobby", json=lobby_config)
         return res
-    
+
     async def create_normal_game_lobby(self, queueID: Optional[int] = 430):
-        lobby_config = {
-            "queueId": queueID
-        }
+        lobby_config = {"queueId": queueID}
         res = await self.post("/lol-lobby/v2/", json=lobby_config)
         return res
-    
+
     async def get_lobby(self):
         return await self.get("/lol-lobby/v2/lobby")
-    
+
     async def get_current_summoner(self) -> Summoner:
         res = await self.get("/lol-summoner/v1/current-summoner")
         return Summoner(**res)

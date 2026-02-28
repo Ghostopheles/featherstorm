@@ -7,6 +7,7 @@ from typing import Callable, Optional
 from league.enums import GameEventType, GameResult
 from league.models import ActivePlayer, AllGameData, GameEvent, GameTeam, Turret
 
+
 def convert_timestamp(seconds: int) -> str:
     minutes, secs = divmod(seconds, 60)
     return f"{int(minutes):02}:{int(secs):02}"
@@ -64,7 +65,9 @@ class DataDragon(APIWrapper):
         url = await self.get_cdn_base_url()
         return await self.get(f"{url}/champion/{champion}.json")
 
+
 type GameEventCallback = Callable[[GameEvent], None]
+
 
 class LeagueClient(APIWrapper):
     callbacks: dict[GameEventType, list[GameEventCallback]]
@@ -81,7 +84,7 @@ class LeagueClient(APIWrapper):
 
     async def get_all_game_data(self) -> AllGameData:
         return AllGameData(**await self.get("/allgamedata"))
-    
+
     async def get_active_player(self) -> Optional[ActivePlayer]:
         raw = await self.get("/activeplayer")
         if raw is None or "error" in raw:
@@ -104,14 +107,14 @@ class LeagueClient(APIWrapper):
         events = await self.get("/eventdata")
         if events is not None and "Events" in events:
             return events["Events"]
-        
+
     def reset(self):
         self.last_event_count = 0
 
     def add_event_callback(self, eventType: GameEventType, callback: GameEventCallback):
         if eventType not in self.callbacks:
             self.callbacks[eventType] = []
-        
+
         self.callbacks[eventType].append(callback)
 
     async def poll_events(self):
@@ -145,7 +148,7 @@ class LeagueClient(APIWrapper):
         eventName = event.EventName
         if eventName not in self.callbacks:
             return
-        
+
         for callback in self.callbacks[eventName]:
             if inspect.iscoroutinefunction(callback):
                 await callback(event)
@@ -155,7 +158,7 @@ class LeagueClient(APIWrapper):
     async def on_event(self, eventRaw: dict):
         event = GameEvent(**eventRaw)
         print(event)
-    
+
         match event.EventName:
             case GameEventType.GameStart:
                 self.on_game_start(event)
@@ -198,14 +201,10 @@ class LeagueClient(APIWrapper):
         self.print_timestamped_message(event, "Minions have spawned")
 
     def on_first_blood(self, event: GameEvent):
-        self.print_timestamped_message(
-            event, f"First blood claimed by {self.format_player(event.Recipient)}"
-        )
+        self.print_timestamped_message(event, f"First blood claimed by {self.format_player(event.Recipient)}")
 
     def on_first_brick(self, event: GameEvent):
-        self.print_timestamped_message(
-            event, f"First brick claimed by {self.format_player(event.KillerName)}"
-        )
+        self.print_timestamped_message(event, f"First brick claimed by {self.format_player(event.KillerName)}")
 
     def on_champion_kill(self, event: GameEvent):
         killer = self.format_player(event.KillerName)
@@ -239,9 +238,7 @@ class LeagueClient(APIWrapper):
         killer = self.format_player(event.KillerName)
         stolen = event.Stolen
 
-        msg = (
-            f"The {dragonType} dragon was {"stolen" if stolen else "slain"} by {killer}"
-        )
+        msg = f"The {dragonType} dragon was {'stolen' if stolen else 'slain'} by {killer}"
         msg = msg + self.format_assists(event.Assisters)
 
         self.print_timestamped_message(event, msg)
@@ -250,7 +247,7 @@ class LeagueClient(APIWrapper):
         killer = self.format_player(event.KillerName)
         stolen = event.Stolen
 
-        msg = f"The Rift Herald was {"stolen" if stolen else "slain"} by {killer}"
+        msg = f"The Rift Herald was {'stolen' if stolen else 'slain'} by {killer}"
         msg = msg + self.format_assists(event.Assisters)
 
         self.print_timestamped_message(event, msg)
@@ -259,7 +256,7 @@ class LeagueClient(APIWrapper):
         killer = self.format_player(event.KillerName)
         stolen = event.Stolen
 
-        msg = f"Baron Nashor was {"stolen" if stolen else "slain"} by {killer}"
+        msg = f"Baron Nashor was {'stolen' if stolen else 'slain'} by {killer}"
         msg = msg + self.format_assists(event.Assisters)
 
         self.print_timestamped_message(event, msg)
@@ -268,7 +265,7 @@ class LeagueClient(APIWrapper):
         killer = self.format_player(event.KillerName)
         stolen = event.Stolen
 
-        msg = f"A grub has been {"stolen" if stolen else "slain"} by {killer}"
+        msg = f"A grub has been {'stolen' if stolen else 'slain'} by {killer}"
         msg = msg + self.format_assists(event.Assisters)
 
         self.print_timestamped_message(event, msg)
@@ -282,5 +279,5 @@ class LeagueClient(APIWrapper):
         self.print_timestamped_message(event, msg)
 
     def on_game_end(self, event: GameEvent):
-        msg = f"You {"lose!" if event.Result == GameResult.Lose else "win!"}"
+        msg = f"You {'lose!' if event.Result == GameResult.Lose else 'win!'}"
         self.print_timestamped_message(event, msg)

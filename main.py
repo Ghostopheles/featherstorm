@@ -10,12 +10,13 @@ from rich import print
 from pathlib import Path
 from dataclasses import dataclass
 
-from chroma import (ChromaSession,
-                    ChromaEffect,
-                    ChromaEffectType,
-                    ChromaColor,
-                    ChromaDevice,
-                    ChromaAnimation,
+from chroma import (
+    ChromaSession,
+    ChromaEffect,
+    ChromaEffectType,
+    ChromaColor,
+    ChromaDevice,
+    ChromaAnimation,
 )
 
 from league.api import LeagueClient
@@ -57,14 +58,11 @@ TEAMMATE_DIM_FACTOR = 0.4  # Peak brightness for teammate events
 CHROMA_APP_INFO = {
     "title": "League of Chroma",
     "description": "The colors...",
-    "author": {
-        "name": "Ghostopheles",
-        "contact": "https://ghst.tools"
-    },
+    "author": {"name": "Ghostopheles", "contact": "https://ghst.tools"},
     "device_supported": [
         "keyboard",
     ],
-    "category": "game"
+    "category": "game",
 }
 
 
@@ -74,15 +72,15 @@ def scale_color(color: ChromaColor, factor: float) -> ChromaColor:
 
 @dataclass
 class Effects:
-    blue: str                                                    # ORDER team base
-    red: str                                                     # CHAOS team base
-    white: str                                                   # spectator base
-    kill_flash: dict                                             # bright gold (my kill)
-    teammate_kill_flash: dict                                    # dim gold (teammate kill)
-    objective_flash: dict                                        # purple flash
-    turret_flash: dict                                           # bright white (my turret kill)
-    teammate_turret_flash: dict                                  # dim white (teammate turret kill)
-    first_brick_flash: dict                                      # short white (my FirstBrick)
+    blue: str  # ORDER team base
+    red: str  # CHAOS team base
+    white: str  # spectator base
+    kill_flash: dict  # bright gold (my kill)
+    teammate_kill_flash: dict  # dim gold (teammate kill)
+    objective_flash: dict  # purple flash
+    turret_flash: dict  # bright white (my turret kill)
+    teammate_turret_flash: dict  # dim white (teammate turret kill)
+    first_brick_flash: dict  # short white (my FirstBrick)
 
 
 async def setup_effects(chroma: ChromaSession, device: ChromaDevice) -> Effects:
@@ -93,9 +91,13 @@ async def setup_effects(chroma: ChromaSession, device: ChromaDevice) -> Effects:
 
     def make_flash(color: ChromaColor, *, steps=10, flash_duration=0.05, total_fade_duration=1.0):
         return {
-            GameTeam.ORDER: ChromaAnimation.flash_fade(color, ChromaColor.blue(),  steps=steps, flash_duration=flash_duration, total_fade_duration=total_fade_duration),
-            GameTeam.CHAOS: ChromaAnimation.flash_fade(color, ChromaColor.red(),   steps=steps, flash_duration=flash_duration, total_fade_duration=total_fade_duration),
-            None:           ChromaAnimation.flash_fade(color, ChromaColor.white(), steps=steps, flash_duration=flash_duration, total_fade_duration=total_fade_duration),
+            GameTeam.ORDER: ChromaAnimation.flash_fade(
+                color, ChromaColor.blue(), steps=steps, flash_duration=flash_duration, total_fade_duration=total_fade_duration
+            ),
+            GameTeam.CHAOS: ChromaAnimation.flash_fade(
+                color, ChromaColor.red(), steps=steps, flash_duration=flash_duration, total_fade_duration=total_fade_duration
+            ),
+            None: ChromaAnimation.flash_fade(color, ChromaColor.white(), steps=steps, flash_duration=flash_duration, total_fade_duration=total_fade_duration),
         }
 
     return Effects(
@@ -136,17 +138,9 @@ async def amain():
         player_teams: dict[str, GameTeam] = {}
         player_champions: dict[str, str] = {}
 
-        team_to_chroma_effect = {
-            GameTeam.ORDER: effects.blue,
-            GameTeam.CHAOS: effects.red,
-            GameTeam.SPECTATOR: effects.white
-        }
+        team_to_chroma_effect = {GameTeam.ORDER: effects.blue, GameTeam.CHAOS: effects.red, GameTeam.SPECTATOR: effects.white}
 
-        team_to_govee_color = {
-            GameTeam.ORDER: GoveeColor.blue(),
-            GameTeam.CHAOS: GoveeColor.red(),
-            GameTeam.SPECTATOR: GoveeColor.white()
-        }
+        team_to_govee_color = {GameTeam.ORDER: GoveeColor.blue(), GameTeam.CHAOS: GoveeColor.red(), GameTeam.SPECTATOR: GoveeColor.white()}
 
         async def on_game_start(_: GameEvent):
             nonlocal active_player_name, active_player_team
