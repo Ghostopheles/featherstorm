@@ -1,8 +1,9 @@
+import httpx
 import asyncio
-from dataclasses import dataclass
 
 from rich import print
 from pathlib import Path
+from dataclasses import dataclass
 
 from chroma import (ChromaSession,
                     ChromaEffect,
@@ -156,9 +157,33 @@ async def amain():
         client.add_event_callback(GameEventType.HeraldKill, on_horde_herald_baron_kill)
         client.add_event_callback(GameEventType.BaronKill, on_horde_herald_baron_kill)
 
-        while True:
-            await client.poll_events()
-            await asyncio.sleep(0.25)
+        while True:  # reconnect loop
+            print("Waiting for League client...")
+            while True:  # waiting state: check every 2s
+                try:
+                    events = await client.get_all_events()
+                    if events is not None:
+                        break
+                except httpx.ConnectError:
+                    pass
+                await asyncio.sleep(2)
+
+            print("League client connected.")
+            client.reset()
+            current_base_effect_id = None
+            active_player_name = None
+            active_player_team = None
+            player_teams.clear()
+
+            while True:  # active polling state: every 250ms
+                try:
+                    await client.poll_events()
+                except httpx.ConnectError:
+                    print("League client disconnected.")
+                    break
+                except Exception as exc:
+                    print(f"Poll error: {exc}")
+                await asyncio.sleep(0.25)
 
 
 if __name__ == "__main__":

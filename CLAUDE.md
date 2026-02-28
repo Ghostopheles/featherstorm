@@ -67,22 +67,25 @@ League Live Client API (127.0.0.1:2999)
 ### Key Classes
 
 - **`LeagueClient`** ([league/api.py](league/api.py)) — polls the League Live Client API, fires typed event handlers, and dispatches registered callbacks. Tracks `last_event_count` to only process new events.
-  - `get_active_player()` → `Optional[ActivePlayer]` — returns `None` on HTTP error (e.g. spectator mode).
+  - `get_active_player()` → `Optional[ActivePlayer]` — returns `None` on HTTP error or spectator mode (API returns `{"error": "..."}` with 200 status in spectator).
   - `get_active_player_team()` → `Optional[GameTeam]` — returns `None` in spectator mode.
+  - `get_all_game_data()` → `AllGameData` — full snapshot; `allPlayers` always populated, `activePlayer` is `None` in spectator mode.
 - **`DataDragon`** ([league/api.py](league/api.py)) — fetches champion/item metadata from Riot's CDN.
-- **`GameEvent`** ([league/models.py](league/models.py)) — `@dataclass` with PascalCase fields matching the API response keys directly (e.g. `EventName`, `KillerName`, `EventTime`). `__post_init__` casts `EventName` → `GameEventType`, `AcingTeam` → `GameTeam`, `Result` → `GameResult`.
-- **`ActivePlayer`** ([league/models.py](league/models.py)) — typed model for the `/activeplayer` response. Key fields: `riotId`, `riotIdGameName`, `riotIdTagLine`, `summonerName`.
+- **`GameEvent`** ([league/models.py](league/models.py)) — `@dataclass` with PascalCase fields matching the API response keys directly (e.g. `EventName`, `KillerName`, `EventTime: float`). `__post_init__` casts `EventName` → `GameEventType`, `AcingTeam` → `GameTeam`, `Result` → `GameResult`.
+- **`ActivePlayer`** ([league/models.py](league/models.py)) — typed model for the `/activeplayer` response. Key fields: `riotId`, `riotIdGameName`, `riotIdTagLine`, `summonerName`. `fullRunes` is `Optional[FullRunes]` — empty in some game modes.
+- **`Player`** ([league/models.py](league/models.py)) — model for each entry in `allPlayers`. Key fields: `riotIdGameName`, `team: GameTeam`. `runes` is `Optional[PlayerRunes]` — empty list in some game modes. `screenPositionBottom`/`screenPositionCenter` are `Optional[str]` comma-separated coordinates, only present in spectator mode (`FLT_MAX` sentinel when player not visible).
 - **`GameEventType`** ([league/enums.py](league/enums.py)) — `StrEnum` whose values are the exact strings returned by the League Live Client API (e.g. `GameStart = "GameStart"`). Covers: `GameStart`, `GameEnd`, `MinionsSpawning`, `FirstBlood`, `TurretKilled`, `InhibKilled`, `DragonKill`, `HeraldKill`, `BaronKill`, `ChampionKill`, `Multikill`, `Ace`, `HordeKill`, `FirstBrick`, `AtakahnKill`.
-- **`Effects`** ([main.py](main.py)) — `@dataclass` holding all pre-registered Chroma effect IDs. Fields: `blue`, `red`, `white` (static base colors), `kill_flash`, `objective_flash` (lists of frame IDs for dim→bright→dim animations).
+- **`Effects`** ([main.py](main.py)) — `@dataclass` holding all pre-registered Chroma effect IDs. Fields: `blue`, `red`, `white` (static base colors), `kill_flash` (bright gold), `teammate_kill_flash` (dim gold), `objective_flash` (purple), `turret_flash` (bright white), `teammate_turret_flash` (dim white), `first_brick_flash` (short white).
 
 ### Adding a New Lighting Effect
 
 All effects are created at startup via `setup_effects()` in [main.py](main.py) and stored in the `Effects` dataclass.
 
 - **Static color**: call `static(ChromaColor.xyz())` inside `setup_effects()` and add the returned ID as a field on `Effects`.
-- **Flash animation**: call `flash_frames(color)` inside `setup_effects()` — this pre-creates one `Static` effect per step in `FLASH_CURVE` and returns the list of IDs. Add as a `list[str]` field on `Effects`.
+- **Flash animation**: call `flash_frames(color)` inside `setup_effects()` — this pre-creates one `Static` effect per step in the curve and returns the list of IDs. Add as a `list[str]` field on `Effects`. Optionally pass a custom curve as the second argument (e.g. `SHORT_FLASH_CURVE` for a shorter animation).
 - To trigger a flash from a callback: `asyncio.create_task(flash(effects.<field>))`.
-- `FLASH_CURVE` and `FLASH_FRAME_DELAY` (module-level constants) control the brightness envelope and frame timing.
+- `FLASH_CURVE`, `SHORT_FLASH_CURVE`, `FLASH_FRAME_DELAY`, and `TEAMMATE_DIM_FACTOR` (module-level constants) control brightness envelopes, frame timing, and teammate effect dimming.
+- Dim teammate effects by passing `scale_color(ChromaColor.xyz(), TEAMMATE_DIM_FACTOR)` as the color to `flash_frames`.
 
 ### Adding a New Event Handler
 
@@ -102,3 +105,6 @@ All effects are created at startup via `setup_effects()` in [main.py](main.py) a
 - `DATA_DIR` in [league/api.py](league/api.py) is hardcoded to an absolute path (`X:/league-of-snakes/data`). If the drive letter changes, update it.
 - The `chroma` dependency is a local path reference (`../rzr-chroma`); both repos must be siblings on disk. Source lives at `../rzr-chroma/src/chroma`.
 - The Live Client API is only available while a game is in progress. The client calls `exit(1)` on `ConnectError`, so start the app after a game has loaded.
+- In spectator mode, `/activeplayer` returns `{"error": "..."}` with HTTP 200 (not a 4xx). Both `get_active_player()` and `AllGameData.__post_init__` guard against this, returning `None` for `activePlayer`.
+- `Player.runes` and `ActivePlayer.fullRunes` can be an empty list `[]` in some game modes — both are typed `Optional` and guarded with a falsy check before construction.
+- `FirstBrick` events can have `TurretKilled = None` in some game modes — `on_first_brick` guards before calling `Turret.from_str()`.

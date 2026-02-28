@@ -28,13 +28,12 @@ class APIWrapper:
             res.raise_for_status()
             return res.json()
         except httpx.ConnectError:
-            print("League client API is unreachable.")
-            exit(1)
+            raise
         except httpx.HTTPStatusError:
             return None
         except Exception as exc:
             print(f"Unknown error occurred: {exc}")
-            exit(1)
+            raise
 
 
 class DataDragon(APIWrapper):
@@ -102,9 +101,12 @@ class LeagueClient(APIWrapper):
 
     async def get_all_events(self):
         events = await self.get("/eventdata")
-        if "Events" in events:
+        if events is not None and "Events" in events:
             return events["Events"]
         
+    def reset(self):
+        self.last_event_count = 0
+
     def add_event_callback(self, eventType: GameEventType, callback: GameEventCallback):
         if eventType not in self.callbacks:
             self.callbacks[eventType] = []
@@ -113,6 +115,8 @@ class LeagueClient(APIWrapper):
 
     async def poll_events(self):
         events = await self.get_all_events()
+        if events is None:
+            return
         event_count = len(events)
         if event_count == self.last_event_count:
             return

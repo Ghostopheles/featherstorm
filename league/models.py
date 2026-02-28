@@ -303,6 +303,10 @@ class Turret:
     @classmethod
     def from_str(cls, name: str):
         name_split = name.split("_")
+        if len(name_split) < 4:
+            print(name)
+            return cls(GameTeam.SPECTATOR, Lane.Middle, TurretTier.Outer)
+
         team = name_split[1].replace("T", "").upper()
         team = GameTeam[team]
 

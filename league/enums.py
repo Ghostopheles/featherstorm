@@ -17,6 +17,7 @@ class GameEventType(StrEnum):
     HordeKill = "HordeKill"
     FirstBrick = "FirstBrick"
     AtakahnKill = "AtakahnKill"
+    InhibRespawned = "InhibRespawned"
 
 
 class GameTeam(StrEnum):
