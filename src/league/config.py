@@ -11,20 +11,10 @@ APP_DIR = Path(typer.get_app_dir(APP_NAME))
 CONFIG_PATH = APP_DIR / "cfg.toml"
 
 DEFAULT_CONFIG = {
-    "lcu": {
-        "client_install_path": "F:/Games/Riot Games/League of Legends"
-    },
-    "govee": {
-        "default_power_state": True,
-        "default_brightness": 100,
-        "request_timeout": 0.5
-    },
-    "chroma": {
-        "teammate_dim_factor": 0.4
-    },
-    "companion": {
-        "default_player_name": "Dallas N Tollway"
-    }
+    "lcu": {"client_install_path": "F:/Games/Riot Games/League of Legends"},
+    "govee": {"default_power_state": True, "default_brightness": 100, "request_timeout": 0.5},
+    "chroma": {"teammate_dim_factor": 0.4},
+    "companion": {"default_player_name": "Dallas N Tollway"},
 }
 
 _cache: dict | None = None
@@ -42,6 +32,7 @@ def _write() -> None:
     with open(CONFIG_PATH, "w") as f:
         toml.dump(_cache, f)
 
+
 def _merge_defaults(cfg: dict, defaults: dict) -> bool:
     """Recursively add missing keys from defaults into cfg. Returns True if any were added."""
     changed = False
@@ -53,8 +44,10 @@ def _merge_defaults(cfg: dict, defaults: dict) -> bool:
             changed |= _merge_defaults(cfg[key], value)
     return changed
 
+
 def get_full_config():
     return _load()
+
 
 def init(force: bool = False) -> bool:
     """Create config from defaults if missing. Returns True if created/reset."""
@@ -67,6 +60,7 @@ def init(force: bool = False) -> bool:
     if _merge_defaults(_load(), DEFAULT_CONFIG):
         _write()
     return False
+
 
 def get(key: str, category: str | None = None) -> Any:
     cfg = _load()

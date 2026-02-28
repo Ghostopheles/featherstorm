@@ -248,15 +248,18 @@ async def amain(govee: bool):
                     print(f"Poll error: {exc}")
                 await asyncio.sleep(0.25)
 
+
 # --------------------------------------- CLI SETUP BELOW THIS LINE ---------------------------------------
 
 config.init()
 
 app = typer.Typer(name="League of Chroma", no_args_is_help=True)
 
+
 @app.command(name="companion", help="Runs the app in it's default mode, watching the current ongoing match.")
 def default(govee: Optional[bool] = True):
     asyncio.run(amain(govee))
+
 
 lcu_app = typer.Typer(name="lcu", no_args_is_help=True)
 app.add_typer(lcu_app)
@@ -266,10 +269,12 @@ lcu_app.add_typer(lcu_champselect_app)
 
 default_client_path = Path(config.get("client_install_path", "lcu"))
 
+
 @lcu_champselect_app.command(name="locked", help="Returns the ID of your currently locked-in champion")
 def get_locked(client_install_path: Optional[Path] = default_client_path):
     client = LCUClient(client_install_path)
     print(asyncio.run(client.get_locked_champion()))
+
 
 @lcu_champselect_app.command(name="hovered", help="Returns the currently hovered champion")
 def get_hovered(client_install_path: Optional[Path] = default_client_path):
@@ -280,13 +285,16 @@ def get_hovered(client_install_path: Optional[Path] = default_client_path):
 lcu_lobby_app = typer.Typer(name="lobby", no_args_is_help=True)
 lcu_app.add_typer(lcu_lobby_app)
 
+
 @lcu_lobby_app.command(name="get", help="Returns the current lobby the player belongs to")
 def get_lobby(client_install_path: Optional[Path] = default_client_path):
     client = LCUClient(client_install_path)
     print(asyncio.run(client.get_current_summoner()))
 
+
 lcu_cfg_app = typer.Typer(name="cfg", no_args_is_help=True)
 lcu_app.add_typer(lcu_cfg_app)
+
 
 @lcu_cfg_app.command(name="view", help="View your saved config")
 def view_cfg(category: Optional[str] = None):
@@ -298,14 +306,17 @@ def view_cfg(category: Optional[str] = None):
         print("Saved config:")
         print(cfg)
 
+
 @lcu_cfg_app.command(name="get", help="Get a saved config value")
 def get_cfg_value(key: str, category: Optional[str] = None):
     value = config.get(key, category)
-    print(f"{category + "." if category else ""}{key}: {value}")
+    print(f"{category + '.' if category else ''}{key}: {value}")
+
 
 @lcu_cfg_app.command(name="set", help="Set a saved config value")
 def set_cfg_value(key: str, value: str, category: Optional[str] = None):
     config.set(key, value, category)
+
 
 @lcu_cfg_app.command(name="reset", help="Reset saved configuration back to defaults")
 def set_cfg_value(force: Optional[bool] = False):
@@ -313,6 +324,7 @@ def set_cfg_value(force: Optional[bool] = False):
         print("Config reset.")
     else:
         print("Config not reset, specify the --force flag to confirm your reset.")
+
 
 if __name__ == "__main__":
     app()
