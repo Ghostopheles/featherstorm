@@ -70,3 +70,33 @@ class LobbyGameMode(StrEnum):
 class LobbyType(Enum):
     Normal = 1
     Custom = 2
+
+class LCURole(StrEnum):
+    Duo = "DUO"
+    DuoCarry = "DUO_CARRY"
+    DuoSupport = "DUO_SUPPORT"
+    Solo = "SOLO"
+    Unknown = "NONE"
+
+class LCULane(StrEnum):
+    Top = "TOP_LANE"
+    Middle = "MID_LANE"
+    Bottom = "BOT_LANE"
+    Jungle = "JUNGLE"
+
+class LCUPosition(StrEnum):
+    Top = "TOP",
+    Middle = "MIDDLE"
+    Jungle = "JUNGLE"
+    Bottom = "BOTTOM"
+    Support = "UTILITY"
+    Apex = "APEX"
+    Unknown = "NONE"
+
+PlayerRoleMapping = {
+    (LCULane.Top, LCURole.Solo): LCUPosition.Top,
+    (LCULane.Middle, LCURole.Solo): LCUPosition.Middle,
+    (LCULane.Jungle, LCURole.Unknown): LCUPosition.Jungle,
+    (LCULane.Bottom, LCURole.DuoCarry): LCUPosition.Bottom,
+    (LCULane.Bottom, LCURole.DuoSupport): LCUPosition.Support,
+}

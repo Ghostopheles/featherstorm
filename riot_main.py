@@ -6,16 +6,16 @@ from rich import print
 from pathlib import Path
 from dotenv import load_dotenv
 
-from league.api import RiotAPIClient
+from league.riot_api import RiotAPIClient
 
 load_dotenv()
 
 async def amain():
     api_key = os.getenv("RIOT_API_KEY")
     client = RiotAPIClient(api_key)
-    data = await client.get_rso_match_ids()
-    with open("data/rso-matchids.json", "w") as f:
-        json.dump(data, f, indent=4)
+    puuid = await client.get_puuid("Dallas N Tollway", "uwu")
+    data = await client.get_recent_matches(puuid, 1)
+    print(data)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,3 @@
-import json
 import httpx
 
 from rich import print
@@ -6,71 +5,15 @@ from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass
 
+from league.http import BaseAPIClient
+from league.dragon import CommunityDataDragon
 from league.lcu.models import MyChampSelection, Summoner, LobbyGameMode, LobbyType
 
 RIOT_USERNAME = "riot"
 
-DRAGON_PATH = Path("./data/dragon")
-DRAGON_PATH.mkdir(parents=True, exist_ok=True)
-
 DEFAULT_QUEUE_ID = 430
 PRACTICE_QUEUE_ID = 3140
 SUMMONERS_RIFT_MAP_ID = 11
-
-class APIClient:
-    client: httpx.AsyncClient
-
-    async def _make_request(self, method, *args, **kwargs):
-        try:
-            res = await self.client.request(method, *args, **kwargs)
-            res.raise_for_status()
-            return res.json()
-        except httpx.HTTPStatusError as e:
-            print(e.response.json())
-            raise e
-
-    async def get(self, *args, **kwargs):
-        return await self._make_request("GET", *args, **kwargs)
-
-    async def post(self, *args, **kwargs):
-        return await self._make_request("POST", *args, **kwargs)
-
-
-class CommunityDataDragon(APIClient):
-    def __init__(self):
-        self.latest_version = self.get_latest_version()
-
-        base_url = f"https://cdn.communitydragon.org/{self.latest_version}"
-        self.client = httpx.AsyncClient(base_url=base_url)
-
-    def get_latest_version(self):
-        url = "https://ddragon.leagueoflegends.com/api/versions.json"
-        res = httpx.get(url).json()
-        return res[0]
-
-    def check_champion_cache(self, championID: int) -> Optional[dict]:
-        path = DRAGON_PATH / "champion" / f"{championID}.json"
-        print(path.resolve())
-        if path.exists():
-            with open(path) as f:
-                data = json.load(f)
-            return data
-        else:
-            return None
-
-    def write_to_champion_cache(self, championID: int, data: dict):
-        path = DRAGON_PATH / "champion" / f"{championID}.json"
-        with open(path, "w") as f:
-            json.dump(data, f, indent=4)
-
-    async def get_champion(self, championID: int):
-        data = self.check_champion_cache(championID)
-        if data is not None:
-            return data
-
-        data = await self.get(f"/champion/{championID}/data")
-        self.write_to_champion_cache(championID, data)
-        return data
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,7 +25,7 @@ class LCULockfileData:
     Protocol: str
 
 
-class LCUClient(APIClient):
+class LCUClient(BaseAPIClient):
     def __init__(self, client_install_path: Path):
         self._lockfile = self._read_lockfile(client_install_path)
 

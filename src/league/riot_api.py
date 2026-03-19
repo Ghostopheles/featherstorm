@@ -1,0 +1,86 @@
+import httpx
+
+from typing import Optional, Any, override
+
+from league.enums import QueueType
+from league.http import BaseAPIClient
+from league.models import Match, PlayerMatch
+
+LANGUAGE = "en_US"
+RIOT_REGION = "americas"
+LOL_REGION = "na1"
+
+RIOT_API_BASE_URL = "https://{region}.api.riotgames.com"
+
+
+def get_region_for_url(url: str):
+    if url.startswith("/riot"):
+        return RIOT_REGION
+    elif "match/v5" in url:
+        return RIOT_REGION
+    elif url.startswith("/lol"):
+        return LOL_REGION
+
+class RiotAPIClient(BaseAPIClient):
+    def __init__(self, api_key: str):
+        headers = {
+            "X-Riot-Token": api_key,
+            "Content-Type": "application/json"
+        }
+
+        self.client = httpx.AsyncClient(
+            http2=True,
+            headers=headers
+        )
+
+    @override
+    async def get(self, endpoint, *args, **kwargs):
+        region = get_region_for_url(endpoint)
+        url = RIOT_API_BASE_URL.format(region=region) + endpoint
+        return await super().get(url, *args, **kwargs)
+
+    async def get_rso_match_ids(
+        self,
+        count: Optional[int] = 5,
+        start_index: Optional[int] = 0,
+        queue_type: Optional[QueueType] = QueueType.Ranked,
+        start_time: Optional[int] = None
+    ):
+        endpoint = "/lol/rso-match/v1/matches/ids"
+        params = {
+            "count": count,
+            "start": start_index,
+            "type": queue_type,
+            "startTime": start_time
+        }
+        return await self.get(endpoint, params=params)
+
+    async def get_puuid(self, game_name: str, tag_line: str) -> str | None:
+        endpoint = f"/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
+        res = await self.get(endpoint)
+        return res.get("puuid")
+
+    async def get_summoner(self, puuid: str) -> Optional[dict[str, Any]]:
+        return await self.get(f"/lol/summoner/v4/summoners/by-puuid/{puuid}")
+
+    async def get_top_champions(self, puuid: str, count: int = 5) -> Optional[dict[str, Any]]:
+        mastery_data = await self.get(
+            f"/lol/champion-mastery/v4/champion-masteries/by-puuid/{puuid}/top", params={"count": count}
+        )
+        if not mastery_data:
+            return None
+
+        return mastery_data
+
+    async def get_recent_matches(self, puuid: str, count: int = 3, match_type: QueueType = QueueType.Normal) -> list[PlayerMatch]:
+        match_ids = await self.get(f"/lol/match/v5/matches/by-puuid/{puuid}/ids", params={"count": count, "type": match_type})
+        if not match_ids:
+            return None
+
+        matches = []
+        for id in match_ids:
+            match_data = await self.get(f"/lol/match/v5/matches/{id}")
+            match = Match.model_validate(match_data)
+            matches.append(PlayerMatch.from_match(match, puuid))
+
+        return matches

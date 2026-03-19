@@ -1,6 +1,7 @@
 from enum import Enum
 from typing import Optional
 from dataclasses import dataclass
+from pydantic import BaseModel, model_validator
 
 from league.enums import GameEventType, GameResult, GameTeam
 
@@ -320,3 +321,311 @@ class Turret:
         tier = TurretTier(tier)
 
         return cls(team, lane, tier)
+
+class ChampionMastery(BaseModel):
+    championId: int
+    championName: Optional[str] = None
+    championLevel: int
+    championPoints: int
+    championPointsUntilNextLevel: int
+
+    @classmethod
+    def with_champion_name(cls, data: dict, champion_name: str):
+        data.setdefault("championName", champion_name)
+        return cls.model_validate(data)
+
+type TopChampions = list[ChampionMastery]
+
+class MatchMetadata(BaseModel):
+    dataVersion: str
+    matchId: str
+    participants: list[str]
+
+
+class ChallengesSummary(BaseModel):
+    kda: Optional[float] = None
+    killParticipation: Optional[float] = None
+    teamDamagePercentage: Optional[float] = None
+    damagePerMinute: Optional[float] = None
+    goldPerMinute: Optional[float] = None
+    soloKills: Optional[int] = None
+    takedowns: Optional[int] = None
+    skillshotsHit: Optional[int] = None
+    skillshotsDodged: Optional[int] = None
+    visionScorePerMinute: Optional[float] = None
+    legendaryCount: Optional[int] = None
+    controlWardsPlaced: Optional[int] = None
+
+
+class ParticipantSummary(BaseModel):
+    # Identity
+    puuid: str
+    participantId: int
+    riotIdGameName: str
+    riotIdTagline: str
+    teamId: int
+    # Champion & role
+    championName: str
+    champLevel: int
+    teamPosition: str
+    # Outcome
+    win: bool
+    gameEndedInSurrender: bool
+    # Core combat
+    kills: int
+    deaths: int
+    assists: int
+    totalMinionsKilled: int
+    neutralMinionsKilled: int
+    # Damage
+    totalDamageDealtToChampions: int
+    totalDamageTaken: int
+    damageSelfMitigated: int
+    damageDealtToBuildings: int
+    # Vision
+    visionScore: int
+    wardsPlaced: int
+    wardsKilled: int
+    detectorWardsPlaced: int
+    # Gold
+    goldEarned: int
+    # Items
+    item0: int
+    item1: int
+    item2: int
+    item3: int
+    item4: int
+    item5: int
+    item6: int
+    # Multi-kills
+    doubleKills: int
+    tripleKills: int
+    quadraKills: int
+    pentaKills: int
+    # Objectives
+    turretKills: int
+    inhibitorKills: int
+    dragonKills: int
+    baronKills: int
+    firstBloodKill: bool
+    # Survival & CC
+    totalTimeSpentDead: int
+    longestTimeSpentLiving: int
+    timeCCingOthers: int
+    # Healing & shielding
+    totalHeal: int
+    totalHealsOnTeammates: int
+    totalDamageShieldedOnTeammates: int
+    # Summoner spells
+    summoner1Id: int
+    summoner2Id: int
+    # Challenges
+    challenges: Optional[ChallengesSummary] = None
+
+
+class TeamSummary(BaseModel):
+    teamId: int
+    win: bool
+    bans: list[dict]
+    objectives: dict
+
+
+class MatchInfo(BaseModel):
+    gameDuration: int
+    gameMode: str
+    gameVersion: str
+    mapId: int
+    queueId: int
+    platformId: str
+    participants: list[ParticipantSummary]
+    teams: list[TeamSummary]
+
+
+class Match(BaseModel):
+    metadata: MatchMetadata
+    info: MatchInfo
+
+
+# Platform status DTOs
+
+class ContentDto(BaseModel):
+    locale: str
+    content: str
+
+
+class UpdateDto(BaseModel):
+    id: int
+    author: str
+    publish: bool
+    publish_locations: list[str]
+    translations: list[ContentDto]
+    created_at: str
+    updated_at: str
+
+
+class StatusDto(BaseModel):
+    id: int
+    maintenance_status: Optional[str] = None  # scheduled | in_progress | complete
+    incident_severity: Optional[str] = None   # info | warning | critical
+    titles: list[ContentDto]
+    updates: list[UpdateDto]
+    created_at: str
+    archive_at: Optional[str] = None
+    updated_at: str
+    platforms: list[str]
+
+
+class PlatformDataDto(BaseModel):
+    id: str
+    name: str
+    locales: list[str]
+    maintenances: list[StatusDto]
+    incidents: list[StatusDto]
+
+
+# Timeline DTOs
+
+class PositionDto(BaseModel):
+    x: int
+    y: int
+
+
+class ParticipantFrameDto(BaseModel):
+    participantId: int
+    totalGold: int
+    level: int
+    xp: int
+    minionsKilled: int
+    jungleMinionsKilled: int
+
+
+class TimelineEvent(BaseModel):
+    type: str
+    timestamp: int
+    # Participant / killer / victim
+    participantId: Optional[int] = None
+    killerId: Optional[int] = None
+    victimId: Optional[int] = None
+    creatorId: Optional[int] = None
+    assistingParticipantIds: Optional[list[int]] = None
+    # Items
+    itemId: Optional[int] = None
+    afterId: Optional[int] = None
+    beforeId: Optional[int] = None
+    goldGain: Optional[int] = None
+    # Level / skill
+    level: Optional[int] = None
+    skillSlot: Optional[int] = None
+    levelUpType: Optional[str] = None
+    # Wards
+    wardType: Optional[str] = None
+    # Buildings
+    buildingType: Optional[str] = None
+    laneType: Optional[str] = None
+    towerType: Optional[str] = None
+    teamId: Optional[int] = None
+    # Monsters
+    monsterType: Optional[str] = None
+    monsterSubType: Optional[str] = None
+    killerTeamId: Optional[int] = None
+    # Kill details
+    killType: Optional[str] = None
+    killStreakLength: Optional[int] = None
+    bounty: Optional[int] = None
+    shutdownBounty: Optional[int] = None
+    # Shared position
+    position: Optional[PositionDto] = None
+    # Game end
+    winningTeam: Optional[int] = None
+
+
+_HIGH_SIGNAL_EVENTS = {
+    "CHAMPION_KILL",
+    "ELITE_MONSTER_KILL",
+    "BUILDING_KILL",
+    "TURRET_PLATE_DESTROYED",
+    "GAME_END",
+}
+
+
+class TimelineFrame(BaseModel):
+    timestamp: int
+    participantFrames: dict[str, ParticipantFrameDto]
+    events: list[TimelineEvent]
+
+    @model_validator(mode="after")
+    def filter_events(self) -> "TimelineFrame":
+        self.events = [e for e in self.events if e.type in _HIGH_SIGNAL_EVENTS]
+        return self
+
+
+class TimelineParticipant(BaseModel):
+    participantId: int
+    puuid: str
+
+
+class TimelineInfo(BaseModel):
+    frameInterval: int
+    gameId: int
+    frames: list[TimelineFrame]
+    participants: list[TimelineParticipant]
+
+
+class MatchTimeline(BaseModel):
+    metadata: MatchMetadata
+    info: TimelineInfo
+
+
+class StatComparison(BaseModel):
+    """Comparison of a single stat for the queried player against match averages."""
+    stat_name: str
+    player_value: float
+    team_avg: float
+    enemy_avg: float
+    match_avg: float
+    player_rank: int        # 1 = best among all 10 participants
+    vs_avg_pct: float       # player_value / match_avg * 100 (100 = average)
+    higher_is_better: bool
+
+
+class MatchPerformanceReport(BaseModel):
+    """Per-stat performance breakdown for a player in a single match."""
+    matchId: str
+    gameDurationMinutes: float
+    champion: str
+    role: str
+    win: bool
+    stats: list[StatComparison]
+
+
+class PlayerMatch(BaseModel):
+    """A match result structured around a specific queried player."""
+    matchId: str
+    gameDuration: int
+    gameMode: str
+    gameVersion: str
+    mapId: int
+    queueId: int
+    teams: list[TeamSummary]
+    player: ParticipantSummary
+    teammates: list[ParticipantSummary]
+    enemies: list[ParticipantSummary]
+
+    @classmethod
+    def from_match(cls, match: Match, puuid: str) -> "PlayerMatch":
+        participants = match.info.participants
+        player = next(p for p in participants if p.puuid == puuid)
+        teammates = [p for p in participants if p.teamId == player.teamId and p.puuid != puuid]
+        enemies = [p for p in participants if p.teamId != player.teamId]
+        return cls(
+            matchId=match.metadata.matchId,
+            gameDuration=match.info.gameDuration,
+            gameMode=match.info.gameMode,
+            gameVersion=match.info.gameVersion,
+            mapId=match.info.mapId,
+            queueId=match.info.queueId,
+            teams=match.info.teams,
+            player=player,
+            teammates=teammates,
+            enemies=enemies,
+        )
