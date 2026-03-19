@@ -29,3 +29,9 @@ class GameTeam(StrEnum):
 class GameResult(Enum):
     Win = 0
     Lose = 1
+
+class QueueType(StrEnum):
+    Ranked = "ranked"
+    Normal = "normal"
+    Tournament = "tourney"
+    Tutorial = "tutorial"

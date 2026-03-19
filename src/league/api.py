@@ -4,9 +4,10 @@ import inspect
 from rich import print
 from typing import Callable, Optional
 
-from league.enums import GameEventType, GameResult
+from league.enums import GameEventType, GameResult, QueueType
 from league.models import ActivePlayer, AllGameData, GameEvent, GameTeam, Turret
 
+DEFAULT_RIOT_API_REGION = "na1"
 
 def convert_timestamp(seconds: int) -> str:
     minutes, secs = divmod(seconds, 60)
@@ -28,42 +29,45 @@ class APIWrapper:
             res = await self.client.get(endpoint, *args, **kwargs)
             res.raise_for_status()
             return res.json()
-        except httpx.ConnectError:
+        except httpx.ConnectError as exc:
+            print(f"HTTP Connect Error: {exc}")
             raise
-        except httpx.HTTPStatusError:
+        except httpx.HTTPStatusError as exc:
+            print(f"HTTP Status Error: {exc}")
             return None
         except Exception as exc:
             print(f"Unknown error occurred: {exc}")
             raise
 
 
-class DataDragon(APIWrapper):
-    client = httpx.AsyncClient(
-        base_url="https://ddragon.leagueoflegends.com",
-        http2=True,
-    )
+class RiotAPIClient(APIWrapper):
+    def __init__(self, api_key: str, region: str | None = DEFAULT_RIOT_API_REGION):
+        headers = {
+            "Authorization": f"Bearer {api_key}"
+        }
 
-    locale = "en_US"
-    latest_version = None
+        self.client = httpx.AsyncClient(
+            base_url=f"https://{region}.api.riotgames.com",
+            http2=True,
+            headers=headers
+        )
 
-    async def get_latest_version(self) -> str:
-        if self.latest_version is None:
-            res = await self.get("/api/versions.json")
-            self.latest_version = res[0]
-        return self.latest_version
+    async def get_rso_match_ids(
+        self,
+        count: Optional[int] = 5,
+        start_index: Optional[int] = 0,
+        queue_type: Optional[QueueType] = QueueType.Ranked,
+        start_time: Optional[int] = None
+    ):
+        endpoint = "/lol/rso-match/v1/matches/ids"
+        params = {
+            "count": count,
+            "start": start_index,
+            "type": queue_type,
+            "startTime": start_time
+        }
+        return await self.get(endpoint, params=params)
 
-    async def get_cdn_base_url(self):
-        version = await self.get_latest_version()
-        return f"/cdn/{version}/data/{self.locale}"
-
-    async def get_all_champions(self):
-        url = await self.get_cdn_base_url()
-        champions = await self.get(f"{url}/champion.json")
-        return champions
-
-    async def get_champion(self, champion: str):
-        url = await self.get_cdn_base_url()
-        return await self.get(f"{url}/champion/{champion}.json")
 
 
 type GameEventCallback = Callable[[GameEvent], None]
