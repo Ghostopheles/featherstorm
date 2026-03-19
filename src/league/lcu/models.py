@@ -1,7 +1,7 @@
 from rich import print
 from pathlib import Path
 from dataclasses import dataclass
-
+from enum import StrEnum, Enum
 from typing import Optional
 
 
@@ -62,3 +62,11 @@ class Summoner:
 
     def __post_init__(self):
         self.rerollPoints = SummonerRerollPoints(**self.rerollPoints)
+
+class LobbyGameMode(StrEnum):
+    Practice = "PRACTICETOOL"
+    Normal = "CLASSIC"
+
+class LobbyType(Enum):
+    Normal = 1
+    Custom = 2

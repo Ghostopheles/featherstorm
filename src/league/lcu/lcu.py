@@ -6,13 +6,16 @@ from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass
 
-from league.lcu.models import MyChampSelection, Summoner
+from league.lcu.models import MyChampSelection, Summoner, LobbyGameMode, LobbyType
 
 RIOT_USERNAME = "riot"
 
 DRAGON_PATH = Path("./data/dragon")
 DRAGON_PATH.mkdir(parents=True, exist_ok=True)
 
+DEFAULT_QUEUE_ID = 430
+PRACTICE_QUEUE_ID = 3140
+SUMMONERS_RIFT_MAP_ID = 11
 
 class APIClient:
     client: httpx.AsyncClient
@@ -109,25 +112,37 @@ class LCUClient(APIClient):
         champ_id = await self.get("/lol-champ-select/v1/current-champion")
         return champ_id
 
-    async def get_selected_champion(self) -> Optional[MyChampSelection]:
+    async def get_hovered_champion(self) -> Optional[MyChampSelection]:
         raw_selection = await self.get("/lol-champ-select/v1/session/my-selection")
         selection = MyChampSelection(**raw_selection) if raw_selection is not None else None
         if selection is None:
             return None
 
-        data = await self.dragon.get_champion(selection.championPickIntent)
-        print(data.get("name"))
         return selection
 
-    async def create_custom_game_lobby(self):
+    async def create_game_lobby(
+        self,
+        lobby_type: Optional[LobbyType] = LobbyType.Custom,
+        game_mode: Optional[LobbyGameMode] = LobbyGameMode.Practice,
+        queueID: Optional[int] = 430
+    ):
+        match lobby_type:
+            case LobbyType.Normal:
+                return await self.create_normal_game_lobby(queueID=queueID)
+            case LobbyType.Custom:
+                return await self.create_custom_game_lobby(game_mode=game_mode)
+
+
+    async def create_custom_game_lobby(self, game_mode: Optional[LobbyGameMode] = LobbyGameMode.Practice):
         lobby_config = {
+            "queueId": PRACTICE_QUEUE_ID,
             "customGameLobby": {
                 "configuration": {
-                    "gameMode": "PRACTICETOOL",
+                    "gameMode": game_mode,
                     "gameMutator": "",
                     "mutators": {"id": 1},
                     "gameServerRegion": "",
-                    "mapId": 11,
+                    "mapId": SUMMONERS_RIFT_MAP_ID,
                     "spectatorPolicy": "AllAllowed",
                     "teamSize": 5,
                     "maxPlayerCount": 10,
@@ -141,9 +156,18 @@ class LCUClient(APIClient):
         res = await self.post("/lol-lobby/v2/lobby", json=lobby_config)
         return res
 
-    async def create_normal_game_lobby(self, queueID: Optional[int] = 430):
-        lobby_config = {"queueId": queueID}
-        res = await self.post("/lol-lobby/v2/", json=lobby_config)
+    async def create_normal_game_lobby(self, queueID: Optional[int] = DEFAULT_QUEUE_ID):
+        """Non-functional right now"""
+        lobby_config = {
+            "queueId": queueID,
+            "customGameLobby": {
+                "configuration": {
+                    "gameMode": LobbyGameMode.Normal,
+                    "mapId": SUMMONERS_RIFT_MAP_ID,
+                }
+            }
+        }
+        res = await self.post("/lol-lobby/v2/lobby", json=lobby_config)
         return res
 
     async def get_lobby(self):
