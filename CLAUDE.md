@@ -8,18 +8,30 @@ A Python application that monitors League of Legends gameplay via the Live Clien
 
 ```
 league-of-snakes/
-├── main.py               # Entry point — wires together LeagueClient, ChromaSession, GoveeConnectionListener
+├── main.py               # Legacy entry point (direct run, always enables Govee)
+├── lcu_main.py           # Scratch script: LCU lobby creation test
+├── riot_main.py          # Scratch script: Riot API test
 ├── log_config.yaml       # Python logging configuration (queue handler, file + console)
 ├── run.bat               # Windows launcher (uv run main.py)
-├── riot-root-cert.pem    # SSL cert for the local League Live Client API
+├── riotgames.pem         # SSL cert (no longer used — LeagueClient uses verify=False)
 ├── pyproject.toml        # Project metadata and dependencies (uv)
 ├── .env                  # RIOT_API_KEY (not committed)
 ├── logs/                 # Log output directory (created at runtime)
-├── league/
-│   ├── api.py            # APIWrapper, DataDragon, LeagueClient
-│   ├── models.py         # GameEvent dataclass
-│   └── enums.py          # GameEventType, GameTeam, GameResult
-└── data/                 # Sample JSON snapshots for development/testing
+├── src/league/
+│   ├── api.py            # LeagueClient (Live Client API poller)
+│   ├── models.py         # GameEvent, ActivePlayer, Player, AllGameData, Match, PlayerMatch
+│   ├── enums.py          # GameEventType, GameTeam, GameResult, QueueType
+│   ├── http.py           # BaseAPIClient (shared base for all API clients)
+│   ├── config.py         # TOML config (stored at OS app dir via typer.get_app_dir)
+│   ├── constants.py      # Shared constants
+│   ├── dragon.py         # CommunityDataDragon (champion/item metadata)
+│   ├── riot_api.py       # RiotAPIClient (PUUID, matches, summoner, champion mastery)
+│   ├── cli.py            # Typer CLI app — primary entry point (featherstorm)
+│   └── lcu/
+│       ├── lcu.py        # LCUClient (reads lockfile, champ-select, lobby creation)
+│       └── models.py     # MyChampSelection, Summoner, LobbyGameMode, LobbyType
+├── data/                 # Sample JSON snapshots for development/testing
+└── ref/                  # Reference JSON snapshots
 ```
 
 ## Tech Stack
@@ -31,21 +43,45 @@ league-of-snakes/
 - **govee** — local sibling package at `../govee` (Govee LAN UDP controller)
 - **pyyaml** — loads `log_config.yaml` for logging configuration
 - **python-dotenv** — loads `.env` for the Riot API key
+- **pydantic** — used for `Match`, `PlayerMatch` models in `models.py`
+- **toml** — reads/writes `config.py` TOML file
 - **rich** — used for `print()` in `api.py` (pretty terminal output)
-- **typer** — CLI framework (available, not yet used)
+- **typer** — CLI framework (`featherstorm` CLI entry point)
 
 ## Running
 
+Primary (CLI, recommended):
+```bash
+uv run featherstorm companion          # with Govee (default)
+uv run featherstorm companion --no-govee
+uv run featherstorm riot matches "Name" "TAG" [--count N] [--match-type ranked|normal|tourney|tutorial]
+uv run featherstorm riot match <match_id>
+uv run featherstorm riot timeline <match_id>
+```
+
+Legacy (direct, always enables Govee):
 ```bash
 uv run main.py
 ```
 
-Or via the Windows launcher:
-```
-run.bat
-```
+League must be running for the Live Client API (`https://127.0.0.1:2999`) to be reachable. The app waits and reconnects automatically — no manual restart needed between games.
 
-League of Legends must be running and in an active game for the Live Client API to be reachable at `https://127.0.0.1:2999`.
+## Config System
+
+`src/league/config.py` stores a TOML config at `typer.get_app_dir("featherstorm")` (OS app dir). Created automatically on first run with defaults.
+
+Categories and keys:
+- `lcu.client_install_path` — path to League install dir (for LCU lockfile)
+- `govee.default_power_state`, `govee.default_brightness`, `govee.request_timeout`
+- `chroma.teammate_dim_factor` (default `0.4`)
+- `companion.default_player_name` — fallback name when not in active game
+
+Manage via CLI:
+```bash
+uv run featherstorm lcu cfg view
+uv run featherstorm lcu cfg set <key> <value> [--category <cat>]
+uv run featherstorm lcu cfg reset [--force]
+```
 
 ## Architecture
 
@@ -117,6 +153,21 @@ All Chroma effects are created at startup via `setup_effects()` in [main.py](mai
 - Add the event to `GameEventType` in [league/enums.py](league/enums.py) if it doesn't exist. The value must be the exact string the Live Client API returns.
 - Add a `case GameEventType.<New>:` branch in `LeagueClient.on_event()` and a corresponding `on_<new>()` method in [league/api.py](league/api.py).
 
+## LCU Client
+
+`src/league/lcu/lcu.py` — `LCUClient` talks to the League client UI API via the local lockfile.
+- Requires League client to be running (not just in-game)
+- Reads `<client_install_path>/lockfile` for port + password (Basic auth, username `riot`)
+- `LCUClient(client_install_path: Path)` — path defaults to `config.get("client_install_path", "lcu")`
+- Key methods: `get_locked_champion()`, `get_hovered_champion()`, `create_game_lobby()`, `create_custom_game_lobby()`, `create_normal_game_lobby()` (non-functional), `get_current_summoner()`
+
+CLI:
+```bash
+uv run featherstorm lcu champ-select locked
+uv run featherstorm lcu champ-select hovered
+uv run featherstorm lcu lobby get
+```
+
 ## Govee Integration
 
 The `govee` package (`../govee`, sibling on disk) controls Govee smart lights over LAN UDP — no cloud, no API key.
@@ -125,6 +176,18 @@ The `govee` package (`../govee`, sibling on disk) controls Govee smart lights ov
 - **`GoveeDevice`** — per-device control. Key methods: `set_power_state(bool)`, `set_brightness(0–100)`, `set_color_and_temperature(GoveeColor, temp_kelvin=5000)`. All sends are fire-and-forget (retries 5× with 50ms gaps, no confirmation).
 - **`GoveeColor`** — simple RGB dataclass with the same factory methods as `ChromaColor` (`.blue()`, `.red()`, `.white()`, `.gold()`, `.purple()`).
 - Currently Govee is only updated on `GameStart` (sets team color). Flash events only drive Chroma.
+
+## Riot API (riot_api.py)
+
+`RiotAPIClient` — reads `RIOT_API_KEY` from `.env` (loaded via `python-dotenv`). Route logic in `get_region_for_url()`: `/riot/*` and `match/v5` → `americas`, `/lol/*` → `na1`.
+
+MATCH-V5 methods:
+- `get_match_ids(puuid, *, count, start, match_type, queue, start_time, end_time)` → `list[str]`
+- `get_match(match_id)` → `Match`
+- `get_match_timeline(match_id)` → `MatchTimeline`
+- `get_recent_matches(puuid, count, match_type)` → `list[PlayerMatch]` (convenience wrapper)
+
+> `developer.riotgames.com/apis` is the correct API reference but is a JS-heavy SPA — **WebFetch cannot render it**. Use **WebSearch** as a fallback (e.g. `"riot match-v5 API endpoints query parameters"`), or a headless browser tool (e.g. Playwright MCP) if available.
 
 ## External APIs
 
@@ -140,7 +203,8 @@ The `govee` package (`../govee`, sibling on disk) controls Govee smart lights ov
 - `DATA_DIR` in [league/api.py](league/api.py) is hardcoded to an absolute path (`X:/league-of-snakes/data`). If the drive letter changes, update it.
 - The `chroma` dependency is a local path reference (`../rzr-chroma`); both repos must be siblings on disk. Source lives at `../rzr-chroma/src/chroma`.
 - The `govee` dependency is a local path reference (`../govee`); it must also be a sibling on disk. Source lives at `../govee/src/govee`.
-- The Live Client API is only available while a game is in progress. The client calls `exit(1)` on `ConnectError`, so start the app after a game has loaded.
+- The Live Client API is only available while a game is in progress. Both `main.py` and `cli.py` poll every 2s waiting for the API to become available, then switch to 250ms polling — no manual restart needed between games.
+- `riot-root-cert.pem` was renamed to `riotgames.pem` but is no longer used — `LeagueClient` now uses `verify=False`.
 - In spectator mode, `/activeplayer` returns `{"error": "..."}` with HTTP 200 (not a 4xx). Both `get_active_player()` and `AllGameData.__post_init__` guard against this, returning `None` for `activePlayer`.
 - `Player.runes` and `ActivePlayer.fullRunes` can be an empty list `[]` in some game modes — both are typed `Optional` and guarded with a falsy check before construction.
 - `FirstBrick` events can have `TurretKilled = None` in some game modes — `on_first_brick` guards before calling `Turret.from_str()`.
