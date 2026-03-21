@@ -4,7 +4,7 @@ from typing import Optional, Any, override
 
 from league.enums import QueueType
 from league.http import BaseAPIClient
-from league.models import Match, PlayerMatch
+from league.models import Match, MatchTimeline, PlayerMatch
 
 LANGUAGE = "en_US"
 RIOT_REGION = "americas"
@@ -72,15 +72,44 @@ class RiotAPIClient(BaseAPIClient):
 
         return mastery_data
 
+    async def get_match_ids(
+        self,
+        puuid: str,
+        *,
+        count: int = 20,
+        start: int = 0,
+        match_type: Optional[QueueType] = None,
+        queue: Optional[int] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+    ) -> list[str]:
+        params = {"count": count, "start": start}
+        if match_type is not None:
+            params["type"] = match_type
+        if queue is not None:
+            params["queue"] = queue
+        if start_time is not None:
+            params["startTime"] = start_time
+        if end_time is not None:
+            params["endTime"] = end_time
+        return await self.get(f"/lol/match/v5/matches/by-puuid/{puuid}/ids", params=params)
+
+    async def get_match(self, match_id: str) -> Match:
+        data = await self.get(f"/lol/match/v5/matches/{match_id}")
+        return Match.model_validate(data)
+
+    async def get_match_timeline(self, match_id: str) -> MatchTimeline:
+        data = await self.get(f"/lol/match/v5/matches/{match_id}/timeline")
+        return MatchTimeline.model_validate(data)
+
     async def get_recent_matches(self, puuid: str, count: int = 3, match_type: QueueType = QueueType.Normal) -> list[PlayerMatch]:
-        match_ids = await self.get(f"/lol/match/v5/matches/by-puuid/{puuid}/ids", params={"count": count, "type": match_type})
+        match_ids = await self.get_match_ids(puuid, count=count, match_type=match_type)
         if not match_ids:
             return None
 
         matches = []
-        for id in match_ids:
-            match_data = await self.get(f"/lol/match/v5/matches/{id}")
-            match = Match.model_validate(match_data)
+        for match_id in match_ids:
+            match = await self.get_match(match_id)
             matches.append(PlayerMatch.from_match(match, puuid))
 
         return matches

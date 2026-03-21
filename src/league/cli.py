@@ -1,3 +1,4 @@
+import os
 import sys
 import yaml
 import httpx
@@ -6,6 +7,8 @@ import atexit
 import asyncio
 import logging
 import logging.config
+
+from dotenv import load_dotenv
 
 from rich import print
 from pathlib import Path
@@ -25,6 +28,8 @@ from league.lcu import LCUClient
 from league.api import LeagueClient
 from league import config
 from league.models import GameEventType, GameTeam, GameEvent
+from league.riot_api import RiotAPIClient
+from league.enums import QueueType
 
 from govee import GoveeConnectionListener, GoveeColor
 
@@ -324,6 +329,67 @@ def set_cfg_value(force: Optional[bool] = False):
         print("Config reset.")
     else:
         print("Config not reset, specify the --force flag to confirm your reset.")
+
+
+riot_app = typer.Typer(name="riot", no_args_is_help=True)
+app.add_typer(riot_app)
+
+
+def _riot_client() -> RiotAPIClient:
+    load_dotenv()
+    api_key = os.getenv("RIOT_API_KEY")
+    if not api_key:
+        print("[bold red]RIOT_API_KEY not set[/bold red]")
+        raise typer.Exit(1)
+    return RiotAPIClient(api_key)
+
+
+@riot_app.command(name="matches", help="Show recent matches for a player.")
+def riot_matches(
+    game_name: str,
+    tag_line: str,
+    count: int = 5,
+    match_type: Optional[QueueType] = None,
+):
+    async def run():
+        client = _riot_client()
+        puuid = await client.get_puuid(game_name, tag_line)
+        if not puuid:
+            print(f"[bold red]Player {game_name}#{tag_line} not found[/bold red]")
+            return
+        matches = await client.get_match_ids(puuid, count=count, match_type=match_type)
+        if not matches:
+            print("No matches found.")
+            return
+        for i, match_id in enumerate(matches, 1):
+            match = await client.get_match(match_id)
+            pm = match.info.participants
+            player = next((p for p in pm if p.puuid == puuid), None)
+            if player:
+                mins = match.info.gameDuration // 60
+                result = "[bold green]WIN[/bold green]" if player.win else "[bold red]LOSS[/bold red]"
+                print(f"{i}. {match.metadata.matchId} | {result} | {player.championName} {player.kills}/{player.deaths}/{player.assists} | {mins}m | {match.info.gameMode}")
+            else:
+                print(f"{i}. {match.metadata.matchId}")
+    asyncio.run(run())
+
+
+@riot_app.command(name="match", help="Show details for a specific match.")
+def riot_match(match_id: str):
+    async def run():
+        client = _riot_client()
+        match = await client.get_match(match_id)
+        print(match)
+    asyncio.run(run())
+
+
+@riot_app.command(name="timeline", help="Show timeline for a specific match.")
+def riot_timeline(match_id: str):
+    async def run():
+        client = _riot_client()
+        timeline = await client.get_match_timeline(match_id)
+        print(timeline)
+    asyncio.run(run())
 
 
 if __name__ == "__main__":
