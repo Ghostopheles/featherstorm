@@ -189,6 +189,8 @@ MATCH-V5 methods:
 
 > `developer.riotgames.com/apis` is the correct API reference but is a JS-heavy SPA — **WebFetch cannot render it**. Use **WebSearch** as a fallback (e.g. `"riot match-v5 API endpoints query parameters"`), or a headless browser tool (e.g. Playwright MCP) if available.
 
+> `https://developer.riotgames.com/docs/lol#data-dragon` is the correct place to reference Data Dragon API docs.
+
 ## External APIs
 
 | API | Base URL | Auth |

@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pydantic import BaseModel, model_validator
 
 from league.enums import GameEventType, GameResult, GameTeam
@@ -41,6 +41,46 @@ class Scores:
     deaths: int
     kills: int
     wardScore: float
+
+
+@dataclass
+class DragonItemImage:
+    full: str
+    sprite: str
+    group: str
+    x: int
+    y: int
+    w: int
+    h: int
+
+
+@dataclass
+class DragonItemGold:
+    base: int
+    purchasable: bool
+    total: int
+    sell: int
+
+
+@dataclass
+class DragonItem:
+    name: str
+    description: str
+    plaintext: str
+    image: DragonItemImage
+    gold: DragonItemGold
+    tags: list[str]
+    maps: dict[str, bool]
+    stats: dict[str, float]
+    colloq: str = ""
+    builds_from: list[str] = field(default_factory=list)
+    depth: Optional[int] = None
+
+    def __post_init__(self):
+        if isinstance(self.image, dict):
+            self.image = DragonItemImage(**self.image)
+        if isinstance(self.gold, dict):
+            self.gold = DragonItemGold(**self.gold)
 
 
 @dataclass

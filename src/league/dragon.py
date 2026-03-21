@@ -1,32 +1,45 @@
 import json
+import shutil
 import httpx
 
 from pathlib import Path
 from typing import Optional
 
 from league.http import BaseAPIClient
+from league.models import DragonItem
 
 DRAGON_PATH = Path("./data/dragon")
 DRAGON_PATH.mkdir(parents=True, exist_ok=True)
+
+VERSION_FILE = DRAGON_PATH / "version.txt"
 
 class CommunityDataDragon(BaseAPIClient):
     _champion_map: dict[int, str] # mapping of champ ID -> name
 
     def __init__(self):
-        self.latest_version = self.get_latest_version()
-
-        community_base_url = f"https://cdn.communitydragon.org/{self.latest_version}"
-        self.client = httpx.AsyncClient(base_url=community_base_url)
-
         official_base_url = "https://ddragon.leagueoflegends.com"
         self.official_client = httpx.AsyncClient(base_url=official_base_url, http2=True)
+        self.latest_version: Optional[str] = None
+        self.client: Optional[httpx.AsyncClient] = None
+
+    async def initialize(self):
+        self.latest_version = await self.get_latest_version()
+        community_base_url = f"https://cdn.communitydragon.org/{self.latest_version}"
+        self.client = httpx.AsyncClient(base_url=community_base_url)
 
     async def get_latest_version(self):
         endpoint = "/api/versions.json"
         res = await self.official_client.get(endpoint)
         res.raise_for_status()
-        data = res.json()
-        return data[0]
+        version = res.json()[0]
+
+        stored = VERSION_FILE.read_text().strip() if VERSION_FILE.exists() else None
+        if stored != version:
+            shutil.rmtree(DRAGON_PATH / "champion", ignore_errors=True)
+            shutil.rmtree(DRAGON_PATH / "item", ignore_errors=True)
+            VERSION_FILE.write_text(version)
+
+        return version
 
     def check_champion_cache(self, championID: int) -> Optional[dict]:
         path = DRAGON_PATH / "champion" / f"{championID}.json"
@@ -41,6 +54,39 @@ class CommunityDataDragon(BaseAPIClient):
         path = DRAGON_PATH / "champion" / f"{championID}.json"
         with open(path, "w") as f:
             json.dump(data, f, indent=4)
+
+    def check_item_cache(self, itemID: int) -> Optional[dict]:
+        path = DRAGON_PATH / "item" / f"{itemID}.json"
+        if path.exists():
+            with open(path) as f:
+                return json.load(f)
+        return None
+
+    def write_to_item_cache(self, itemID: int, data: dict):
+        path = DRAGON_PATH / "item" / f"{itemID}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(data, f, indent=4)
+
+    async def get_item(self, itemID: int) -> Optional[DragonItem]:
+        data = self.check_item_cache(itemID)
+        if data is None:
+            res = await self.official_client.get(f"/cdn/{self.latest_version}/data/en_US/item.json")
+            res.raise_for_status()
+            all_items: dict = res.json()["data"]
+
+            for id_str, item in all_items.items():
+                self.write_to_item_cache(int(id_str), item)
+
+            data = all_items.get(str(itemID))
+
+        if data is None:
+            return None
+
+        return DragonItem(
+            builds_from=data.pop("from", []),
+            **data,
+        )
 
     async def get_champion(self, championID: int) -> dict:
         data = self.check_champion_cache(championID)

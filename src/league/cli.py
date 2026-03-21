@@ -29,6 +29,7 @@ from league.api import LeagueClient
 from league import config
 from league.models import GameEventType, GameTeam, GameEvent
 from league.riot_api import RiotAPIClient
+from league.dragon import CommunityDataDragon
 from league.enums import QueueType
 
 from govee import GoveeConnectionListener, GoveeColor
@@ -389,6 +390,23 @@ def riot_timeline(match_id: str):
         client = _riot_client()
         timeline = await client.get_match_timeline(match_id)
         print(timeline)
+    asyncio.run(run())
+
+
+dragon_app = typer.Typer(name="dragon", no_args_is_help=True)
+app.add_typer(dragon_app)
+
+
+@dragon_app.command(name="item", help="Get item info by ID.")
+def dragon_item(item_id: int):
+    async def run():
+        dragon = CommunityDataDragon()
+        await dragon.initialize()
+        item = await dragon.get_item(item_id)
+        if item is None:
+            print(f"[bold red]Item {item_id} not found[/bold red]")
+            return
+        print(item)
     asyncio.run(run())
 
 
