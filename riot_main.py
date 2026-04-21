@@ -1,9 +1,7 @@
 import os
-import json
 import asyncio
 
 from rich import print
-from pathlib import Path
 from dotenv import load_dotenv
 
 from league.riot_api import RiotAPIClient
