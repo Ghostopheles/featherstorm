@@ -85,6 +85,7 @@ class CommunityDataDragon(BaseAPIClient):
 
         return DragonItem(
             builds_from=data.pop("from", []),
+            builds_into=data.pop("into", []),
             **data,
         )
 

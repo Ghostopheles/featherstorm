@@ -19,7 +19,7 @@ league-of-snakes/
 ├── logs/                 # Log output directory (created at runtime)
 ├── src/league/
 │   ├── api.py            # LeagueClient (Live Client API poller)
-│   ├── models.py         # GameEvent, ActivePlayer, Player, AllGameData, Match, PlayerMatch
+│   ├── models.py         # GameEvent, ActivePlayer, Player, AllGameData, Match, PlayerMatch, DragonItem
 │   ├── enums.py          # GameEventType, GameTeam, GameResult, QueueType
 │   ├── http.py           # BaseAPIClient (shared base for all API clients)
 │   ├── config.py         # TOML config (stored at OS app dir via typer.get_app_dir)
@@ -112,6 +112,7 @@ League Live Client API (127.0.0.1:2999)
   - `get_active_player_team()` → `Optional[GameTeam]` — returns `None` in spectator mode.
   - `get_all_game_data()` → `AllGameData` — full snapshot; `allPlayers` always populated, `activePlayer` is `None` in spectator mode.
 - **`DataDragon`** ([league/api.py](league/api.py)) — fetches champion/item metadata from Riot's CDN.
+- **`DragonItem`** ([league/models.py](league/models.py)) — constructed via `**data` unpacking from the CDN JSON, so every field in the API response must have a matching dataclass field or `get_item()` raises `TypeError`. Two keys are remapped: `"from"` → `builds_from`, `"into"` → `builds_into` (popped before unpacking in `dragon.py`).
 - **`GameEvent`** ([league/models.py](league/models.py)) — `@dataclass` with PascalCase fields matching the API response keys directly (e.g. `EventName`, `KillerName`, `EventTime: float`). `__post_init__` casts `EventName` → `GameEventType`, `AcingTeam` → `GameTeam`, `Result` → `GameResult`.
 - **`ActivePlayer`** ([league/models.py](league/models.py)) — typed model for the `/activeplayer` response. Key fields: `riotId`, `riotIdGameName`, `riotIdTagLine`, `summonerName`. `fullRunes` is `Optional[FullRunes]` — empty in some game modes.
 - **`Player`** ([league/models.py](league/models.py)) — model for each entry in `allPlayers`. Key fields: `riotIdGameName`, `team: GameTeam`. `runes` is `Optional[PlayerRunes]` — empty list in some game modes. `screenPositionBottom`/`screenPositionCenter` are `Optional[str]` comma-separated coordinates, only present in spectator mode (`FLT_MAX` sentinel when player not visible).
@@ -195,7 +196,7 @@ MATCH-V5 methods:
 
 | API | Base URL | Auth |
 |-----|----------|------|
-| League Live Client | `https://127.0.0.1:2999/liveclientdata` | SSL cert (`riot-root-cert.pem`) |
+| League Live Client | `https://127.0.0.1:2999/liveclientdata` | None (`verify=False`) |
 | Riot Data Dragon | `https://ddragon.leagueoflegends.com` | None |
 | Riot API | `https://api.riotgames.com` | `RIOT_API_KEY` in `.env` |
 | Govee LAN | UDP `device_ip:4003` / broadcast `239.255.255.250:4001` | None |
@@ -213,3 +214,4 @@ MATCH-V5 methods:
 - Govee local IP auto-detection in `govee/shared.py` uses a socket to `8.8.8.8:80`. May fail on isolated networks — hardcode `LISTEN_ADDR` in `../govee/src/govee/shared.py` if needed.
 - Govee discovery is periodic (every 180s); allow 0.5–2s after `listener.start()` before accessing `listener.devices`. New devices on the network may take up to 3 minutes to appear.
 - Govee sends are fire-and-forget — no confirmation that the device received the command.
+- When upgrading the Data Dragon version in `dragon.py`, test `get_item()` against a few items (e.g. `1001` Boots, `1054` Doran's Blade) — new fields in the CDN response will cause `TypeError` on construction since `DragonItem` uses `**data` unpacking.

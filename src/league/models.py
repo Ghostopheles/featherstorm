@@ -74,7 +74,17 @@ class DragonItem:
     stats: dict[str, float]
     colloq: str = ""
     builds_from: list[str] = field(default_factory=list)
+    builds_into: list[str] = field(default_factory=list)
     depth: Optional[int] = None
+    consumed: Optional[bool] = None
+    consumeOnFull: Optional[bool] = None
+    inStore: Optional[bool] = None
+    stacks: Optional[int] = None
+    specialRecipe: Optional[int] = None
+    hideFromAll: bool = False
+    requiredChampion: str = ""
+    requiredAlly: str = ""
+    effect: Optional[dict[str, str]] = None
 
     def __post_init__(self):
         if isinstance(self.image, dict):

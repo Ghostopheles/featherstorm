@@ -67,16 +67,17 @@ class LCUClient(BaseAPIClient):
         self,
         lobby_type: Optional[LobbyType] = LobbyType.Custom,
         game_mode: Optional[LobbyGameMode] = LobbyGameMode.Practice,
-        queueID: Optional[int] = 430
+        queueID: Optional[int] = 430,
+        **kwargs,
     ):
         match lobby_type:
             case LobbyType.Normal:
-                return await self.create_normal_game_lobby(queueID=queueID)
+                return await self.create_normal_game_lobby(queueID=queueID, **kwargs)
             case LobbyType.Custom:
-                return await self.create_custom_game_lobby(game_mode=game_mode)
+                return await self.create_custom_game_lobby(game_mode=game_mode, **kwargs)
 
 
-    async def create_custom_game_lobby(self, game_mode: Optional[LobbyGameMode] = LobbyGameMode.Practice):
+    async def create_custom_game_lobby(self, game_mode: Optional[LobbyGameMode] = LobbyGameMode.Practice, **kwargs):
         lobby_config = {
             "queueId": PRACTICE_QUEUE_ID,
             "customGameLobby": {
@@ -96,10 +97,12 @@ class LCUClient(BaseAPIClient):
             },
             "isCustom": True,
         }
+        if kwargs:
+            lobby_config.update(kwargs)
         res = await self.post("/lol-lobby/v2/lobby", json=lobby_config)
         return res
 
-    async def create_normal_game_lobby(self, queueID: Optional[int] = DEFAULT_QUEUE_ID):
+    async def create_normal_game_lobby(self, queueID: Optional[int] = DEFAULT_QUEUE_ID, **kwargs):
         """Non-functional right now"""
         lobby_config = {
             "queueId": queueID,
@@ -110,6 +113,8 @@ class LCUClient(BaseAPIClient):
                 }
             }
         }
+        if kwargs:
+            lobby_config.update(kwargs)
         res = await self.post("/lol-lobby/v2/lobby", json=lobby_config)
         return res
 

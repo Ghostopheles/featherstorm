@@ -13,7 +13,7 @@ GAME_INSTALL_PATH = Path("F:/Games/Riot Games/League of Legends")
 
 async def amain():
     client = LCUClient(GAME_INSTALL_PATH)
-    print(await client.create_normal_game_lobby())
+    print(await client.create_custom_game_lobby())
 
 
 if __name__ == "__main__":
