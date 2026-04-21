@@ -1,4 +1,5 @@
 set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
+set quiet := true
 
 run:
     uv run main.py
