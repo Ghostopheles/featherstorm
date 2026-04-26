@@ -113,3 +113,8 @@ class RiotAPIClient(BaseAPIClient):
             matches.append(PlayerMatch.from_match(match, puuid))
 
         return matches
+
+    async def get_recent_replays(self, puuid: str) -> list[str]:
+        """Returns the URLs to download the .rofl replay files for (up to) the user's last 5 games"""
+        data = await self.get(f"/lol/match/v5/matches/by-puuid/{puuid}/replays")
+        return data

@@ -12,7 +12,7 @@ async def amain():
     api_key = os.getenv("RIOT_API_KEY")
     client = RiotAPIClient(api_key)
     puuid = await client.get_puuid("Dallas N Tollway", "uwu")
-    data = await client.get_recent_matches(puuid, 1)
+    data = await client.get_replays_for_user(puuid)
     print(data)
 
 
