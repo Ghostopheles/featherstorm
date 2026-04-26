@@ -13,7 +13,9 @@ GAME_INSTALL_PATH = Path("F:/Games/Riot Games/League of Legends")
 
 async def amain():
     client = LCUClient(GAME_INSTALL_PATH)
-    print(await client.create_custom_game_lobby())
+    match_ids = await client.get_recent_match_ids()
+    for match in match_ids:
+        print(await client.get_replay_metadata(match))
 
 
 if __name__ == "__main__":

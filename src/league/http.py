@@ -1,3 +1,4 @@
+import json
 import httpx
 
 class BaseAPIClient:
@@ -7,10 +8,14 @@ class BaseAPIClient:
         try:
             res = await self.client.request(method, *args, **kwargs)
             res.raise_for_status()
-            return res.json()
+            try:
+                return res.json()
+            except json.decoder.JSONDecodeError:
+                return None
         except httpx.HTTPStatusError as e:
             print(e.response.json())
             raise e
+
 
     async def get(self, *args, **kwargs):
         return await self._make_request("GET", *args, **kwargs)

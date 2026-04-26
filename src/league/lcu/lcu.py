@@ -1,4 +1,5 @@
 import httpx
+import asyncio
 
 from rich import print
 from pathlib import Path
@@ -8,6 +9,8 @@ from dataclasses import dataclass
 from league.http import BaseAPIClient
 from league.dragon import CommunityDataDragon
 from league.lcu.models import MyChampSelection, Summoner, LobbyGameMode, LobbyType
+
+FALLBACK_LOCKFILE_PATH = Path("F:/Games/League of Legends/lockfile")
 
 RIOT_USERNAME = "riot"
 
@@ -43,6 +46,9 @@ class LCUClient(BaseAPIClient):
 
     def _read_lockfile(self, client_install_path: Path) -> LCULockfileData:
         lockfile_path = client_install_path / "lockfile"
+        if not lockfile_path.exists():
+            lockfile_path = FALLBACK_LOCKFILE_PATH
+
         if not lockfile_path.exists():
             raise FileNotFoundError("Client lockfile not found")
 
@@ -124,3 +130,33 @@ class LCUClient(BaseAPIClient):
     async def get_current_summoner(self) -> Summoner:
         res = await self.get("/lol-summoner/v1/current-summoner")
         return Summoner(**res)
+
+    async def get_match_history(self) -> dict:
+        res = await self.get("/lol-match-history/v1/products/lol/current-summoner/matches")
+        return res
+
+    async def get_recent_match_ids(self) -> list[int]:
+        history = await self.get_match_history()
+
+        games = history.get("games").get("games")
+        match_ids = [g.get("gameId") for g in games]
+        return match_ids
+
+    async def download_replay(self, matchID: int):
+        res = await self.post(f"/lol-replays/v1/rofls/{matchID}/download/graceful", json={
+            "gameId": matchID
+        })
+        return res
+
+    async def launch_replay(self, matchID: int):
+        metadata = await self.get_replay_metadata(matchID)
+        if metadata.get("state") == "download":
+            await self.download_replay(matchID)
+            await asyncio.sleep(5)
+
+        return await self.post(f"/lol-replays/v1/rofls/{matchID}/watch", json={
+            "gameId": matchID
+        })
+
+    async def get_replay_metadata(self, matchID: int):
+        return await self.get(f"/lol-replays/v1/metadata/{matchID}")
