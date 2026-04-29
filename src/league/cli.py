@@ -1,9 +1,6 @@
 import os
-import sys
-import yaml
 import httpx
 import typer
-import atexit
 import asyncio
 
 from dotenv import load_dotenv
