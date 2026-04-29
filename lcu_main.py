@@ -7,7 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from league.lcu import LCUClient
-from league.lcu.socket import LCUWebsocketEvent
+from league.lcu.socket import LCUWebsocketEvent, LCUWebsocketEventType
 
 load_dotenv()
 
@@ -29,6 +29,9 @@ async def amain():
     client = LCUClient(GAME_INSTALL_PATH)
 
     async def on_champion_selected(event: LCUWebsocketEvent):
+        if event.eventType == LCUWebsocketEventType.Delete:
+            return
+
         champID = event.data
         if champID == 0:
             return
@@ -38,6 +41,17 @@ async def amain():
         print(f"You've locked in {champ_name}. See the build: https://onetricks.gg/champions/builds/{champ_name}")
 
     client.on("OnJsonApiEvent_lol-champ-select_v1_current-champion", on_champion_selected)
+
+    async def on_any(event: LCUWebsocketEvent):
+        print(event)
+
+    other_events = [
+        "OnJsonApiEvent_lol-matchmaking_v1_ready-check",
+        "OnJsonApiEvent_lol-lobby-team-builder_champ-select_v1",
+        "OnJsonApiEvent_lol-lobby_v2_lobby",
+    ]
+    for e in other_events:
+        client.on(e, on_any)
 
     await client.start_websocket()
 
