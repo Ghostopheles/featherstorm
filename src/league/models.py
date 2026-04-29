@@ -372,6 +372,7 @@ class Turret:
 
         return cls(team, lane, tier)
 
+
 class ChampionMastery(BaseModel):
     championId: int
     championName: Optional[str] = None
@@ -384,7 +385,9 @@ class ChampionMastery(BaseModel):
         data.setdefault("championName", champion_name)
         return cls.model_validate(data)
 
+
 type TopChampions = list[ChampionMastery]
+
 
 class MatchMetadata(BaseModel):
     dataVersion: str
@@ -498,6 +501,7 @@ class Match(BaseModel):
 
 # Platform status DTOs
 
+
 class ContentDto(BaseModel):
     locale: str
     content: str
@@ -516,7 +520,7 @@ class UpdateDto(BaseModel):
 class StatusDto(BaseModel):
     id: int
     maintenance_status: Optional[str] = None  # scheduled | in_progress | complete
-    incident_severity: Optional[str] = None   # info | warning | critical
+    incident_severity: Optional[str] = None  # info | warning | critical
     titles: list[ContentDto]
     updates: list[UpdateDto]
     created_at: str
@@ -534,6 +538,7 @@ class PlatformDataDto(BaseModel):
 
 
 # Timeline DTOs
+
 
 class PositionDto(BaseModel):
     x: int
@@ -628,18 +633,20 @@ class MatchTimeline(BaseModel):
 
 class StatComparison(BaseModel):
     """Comparison of a single stat for the queried player against match averages."""
+
     stat_name: str
     player_value: float
     team_avg: float
     enemy_avg: float
     match_avg: float
-    player_rank: int        # 1 = best among all 10 participants
-    vs_avg_pct: float       # player_value / match_avg * 100 (100 = average)
+    player_rank: int  # 1 = best among all 10 participants
+    vs_avg_pct: float  # player_value / match_avg * 100 (100 = average)
     higher_is_better: bool
 
 
 class MatchPerformanceReport(BaseModel):
     """Per-stat performance breakdown for a player in a single match."""
+
     matchId: str
     gameDurationMinutes: float
     champion: str
@@ -650,6 +657,7 @@ class MatchPerformanceReport(BaseModel):
 
 class PlayerMatch(BaseModel):
     """A match result structured around a specific queried player."""
+
     matchId: str
     gameDuration: int
     gameMode: str

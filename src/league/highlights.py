@@ -12,10 +12,11 @@ from league.riot_api import RiotAPIClient
 LAUNCH_POLL_INTERVAL = 1
 LAUNCH_TIMEOUT = 60
 DOWNLOAD_CHUNK_SIZE = 8192
-CLIP_DURATION = 10 # seconds
+CLIP_DURATION = 10  # seconds
 GAME_CLIENT_NAME = "League of Legends.exe"
 
 REPLAY_API_URL = "https://127.0.0.1:2999/replay"
+
 
 class HighlightManager:
     game_path: Path
@@ -86,9 +87,7 @@ class HighlightManager:
         timestamps = []
         for event in events:
             time = event.timestamp / 1000
-            timestamps.append(
-                (time - buffer, time + buffer)
-            )
+            timestamps.append((time - buffer, time + buffer))
 
         await self.open_replay(matchID)
         await self.wait_for_replay_ready()
@@ -125,42 +124,36 @@ class HighlightManager:
     async def record(self, time_ranges: list[set[float]]):
         self.pid = await self.get_replay_pid()
 
-        await self.http.post(REPLAY_API_URL + "/playback", json={
-            "paused": True
-        })
+        await self.http.post(REPLAY_API_URL + "/playback", json={"paused": True})
         await asyncio.sleep(5)
 
         start_time, end_time = time_ranges[0]
-        res = await self.http.post(REPLAY_API_URL + "/playback", json={
-            "paused": False,
-            "seeking": False,
-            "speed": 1.0,
-            "time": start_time - 5
-        })
+        res = await self.http.post(REPLAY_API_URL + "/playback", json={"paused": False, "seeking": False, "speed": 1.0, "time": start_time - 5})
         res.raise_for_status()
 
         await asyncio.sleep(1)
 
         file_name = "recording.webm"
-        rec = await self.http.post(REPLAY_API_URL + "/recording", json={
-            "recording": True,
-            "codec": "webm",
-            "lossless": True,
-            "path": file_name,
-            "width": 2560,
-            "height": 1440,
-            "startTime": start_time,
-            "endTime": end_time,
-            "framesPerSecond": 60
-        })
+        rec = await self.http.post(
+            REPLAY_API_URL + "/recording",
+            json={
+                "recording": True,
+                "codec": "webm",
+                "lossless": True,
+                "path": file_name,
+                "width": 2560,
+                "height": 1440,
+                "startTime": start_time,
+                "endTime": end_time,
+                "framesPerSecond": 60,
+            },
+        )
         print("recording")
         rec.raise_for_status()
 
         await asyncio.sleep(CLIP_DURATION + 5)
 
-        end_rec = await self.http.post(REPLAY_API_URL + "/recording", json={
-            "recording": False
-        })
+        end_rec = await self.http.post(REPLAY_API_URL + "/recording", json={"recording": False})
         end_rec.raise_for_status()
 
         await self.close_active_replay()

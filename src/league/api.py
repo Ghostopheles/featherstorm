@@ -10,6 +10,7 @@ from league.models import ActivePlayer, AllGameData, GameEvent, GameTeam, Turret
 
 DEFAULT_RIOT_API_REGION = "na1"
 
+
 def convert_timestamp(seconds: int) -> str:
     minutes, secs = divmod(seconds, 60)
     return f"{int(minutes):02}:{int(secs):02}"
@@ -23,6 +24,7 @@ def format_assists(assists):
 
 
 type GameEventCallback = Callable[[GameEvent], None]
+
 
 class LeagueClient(BaseAPIClient):
     callbacks: dict[GameEventType, list[GameEventCallback]]

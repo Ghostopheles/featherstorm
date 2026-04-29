@@ -3,10 +3,9 @@ from dataclasses import dataclass
 
 from league.lcu.models import LCUTimeline, LCUTimelineEvent, LCUTimelineFrame, MapPosition
 
+
 class LCUTimelineAnalyzer:
-    HIGHLIGHT_EVENTS = {
-        "CHAMPION_KILL"
-    }
+    HIGHLIGHT_EVENTS = {"CHAMPION_KILL"}
 
     def __init__(self, targetParticipantID: int, timeline: LCUTimeline):
         self.targetParticipantID = targetParticipantID
@@ -29,13 +28,10 @@ class LCUTimelineAnalyzer:
 
         events = []
         for event in relevant_events:
-            events.append(LCUHighlightEvent(
-                type=event.type,
-                timestamp=event.timestamp,
-                position=event.position
-            ))
+            events.append(LCUHighlightEvent(type=event.type, timestamp=event.timestamp, position=event.position))
 
         return events
+
 
 @dataclass
 class LCUHighlightEvent:

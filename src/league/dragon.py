@@ -13,8 +13,9 @@ DRAGON_PATH.mkdir(parents=True, exist_ok=True)
 
 VERSION_FILE = DRAGON_PATH / "version.txt"
 
+
 class CommunityDataDragon(BaseAPIClient):
-    _champion_map: dict[int, str] # mapping of champ ID -> name
+    _champion_map: dict[int, str]  # mapping of champ ID -> name
 
     def __init__(self):
         official_base_url = "https://ddragon.leagueoflegends.com"

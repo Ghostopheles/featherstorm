@@ -62,13 +62,16 @@ class Summoner:
     def __post_init__(self):
         self.rerollPoints = SummonerRerollPoints(**self.rerollPoints)
 
+
 class LobbyGameMode(StrEnum):
     Practice = "PRACTICETOOL"
     Normal = "CLASSIC"
 
+
 class LobbyType(Enum):
     Normal = 1
     Custom = 2
+
 
 class LCURole(StrEnum):
     Duo = "DUO"
@@ -77,20 +80,23 @@ class LCURole(StrEnum):
     Solo = "SOLO"
     Unknown = "NONE"
 
+
 class LCULane(StrEnum):
     Top = "TOP_LANE"
     Middle = "MID_LANE"
     Bottom = "BOT_LANE"
     Jungle = "JUNGLE"
 
+
 class LCUPosition(StrEnum):
-    Top = "TOP",
+    Top = ("TOP",)
     Middle = "MIDDLE"
     Jungle = "JUNGLE"
     Bottom = "BOTTOM"
     Support = "UTILITY"
     Apex = "APEX"
     Unknown = "NONE"
+
 
 PlayerRoleMapping = {
     (LCULane.Top, LCURole.Solo): LCUPosition.Top,
@@ -104,6 +110,7 @@ PlayerRoleMapping = {
 # ---------------------------------------------------------------------------
 # LCU Match History models (older v4-style format from the LCU API)
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class MatchPlayer:
@@ -331,6 +338,7 @@ class LCUMatch:
         self.participants = [Participant(**p) for p in self.participants]
         self.teams = [MatchTeam(**t) for t in self.teams]
 
+
 @dataclass
 class LCUGames:
     gameBeginDate: str
@@ -343,6 +351,7 @@ class LCUGames:
     def __post_init__(self):
         self.games = [LCUMatch(**g) for g in self.games]
 
+
 @dataclass
 class LCUMatchHistory:
     accountId: int
@@ -352,9 +361,11 @@ class LCUMatchHistory:
     def __post_init__(self):
         self.games = LCUGames(**self.games)
 
+
 # ---------------------------------------------------------------------------
 # LCU Timeline models
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class MapPosition:

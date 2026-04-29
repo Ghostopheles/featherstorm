@@ -21,17 +21,12 @@ def get_region_for_url(url: str):
     elif url.startswith("/lol"):
         return LOL_REGION
 
+
 class RiotAPIClient(BaseAPIClient):
     def __init__(self, api_key: str):
-        headers = {
-            "X-Riot-Token": api_key,
-            "Content-Type": "application/json"
-        }
+        headers = {"X-Riot-Token": api_key, "Content-Type": "application/json"}
 
-        self.client = httpx.AsyncClient(
-            http2=True,
-            headers=headers
-        )
+        self.client = httpx.AsyncClient(http2=True, headers=headers)
 
     @override
     async def get(self, endpoint, *args, **kwargs):
@@ -40,19 +35,10 @@ class RiotAPIClient(BaseAPIClient):
         return await super().get(url, *args, **kwargs)
 
     async def get_rso_match_ids(
-        self,
-        count: Optional[int] = 5,
-        start_index: Optional[int] = 0,
-        queue_type: Optional[QueueType] = QueueType.Ranked,
-        start_time: Optional[int] = None
+        self, count: Optional[int] = 5, start_index: Optional[int] = 0, queue_type: Optional[QueueType] = QueueType.Ranked, start_time: Optional[int] = None
     ):
         endpoint = "/lol/rso-match/v1/matches/ids"
-        params = {
-            "count": count,
-            "start": start_index,
-            "type": queue_type,
-            "startTime": start_time
-        }
+        params = {"count": count, "start": start_index, "type": queue_type, "startTime": start_time}
         return await self.get(endpoint, params=params)
 
     async def get_puuid(self, game_name: str, tag_line: str) -> str | None:
@@ -64,9 +50,7 @@ class RiotAPIClient(BaseAPIClient):
         return await self.get(f"/lol/summoner/v4/summoners/by-puuid/{puuid}")
 
     async def get_top_champions(self, puuid: str, count: int = 5) -> Optional[dict[str, Any]]:
-        mastery_data = await self.get(
-            f"/lol/champion-mastery/v4/champion-masteries/by-puuid/{puuid}/top", params={"count": count}
-        )
+        mastery_data = await self.get(f"/lol/champion-mastery/v4/champion-masteries/by-puuid/{puuid}/top", params={"count": count})
         if not mastery_data:
             return None
 

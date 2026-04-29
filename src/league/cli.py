@@ -369,9 +369,12 @@ def riot_matches(
             if player:
                 mins = match.info.gameDuration // 60
                 result = "[bold green]WIN[/bold green]" if player.win else "[bold red]LOSS[/bold red]"
-                print(f"{i}. {match.metadata.matchId} | {result} | {player.championName} {player.kills}/{player.deaths}/{player.assists} | {mins}m | {match.info.gameMode}")
+                print(
+                    f"{i}. {match.metadata.matchId} | {result} | {player.championName} {player.kills}/{player.deaths}/{player.assists} | {mins}m | {match.info.gameMode}"
+                )
             else:
                 print(f"{i}. {match.metadata.matchId}")
+
     asyncio.run(run())
 
 
@@ -381,6 +384,7 @@ def riot_match(match_id: str):
         client = _riot_client()
         match = await client.get_match(match_id)
         print(match)
+
     asyncio.run(run())
 
 
@@ -390,6 +394,7 @@ def riot_timeline(match_id: str):
         client = _riot_client()
         timeline = await client.get_match_timeline(match_id)
         print(timeline)
+
     asyncio.run(run())
 
 
@@ -407,6 +412,7 @@ def dragon_item(item_id: int):
             print(f"[bold red]Item {item_id} not found[/bold red]")
             return
         print(item)
+
     asyncio.run(run())
 
 

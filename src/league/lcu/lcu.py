@@ -82,7 +82,6 @@ class LCUClient(BaseAPIClient):
             case LobbyType.Custom:
                 return await self.create_custom_game_lobby(game_mode=game_mode, **kwargs)
 
-
     async def create_custom_game_lobby(self, game_mode: Optional[LobbyGameMode] = LobbyGameMode.Practice, **kwargs):
         lobby_config = {
             "queueId": PRACTICE_QUEUE_ID,
@@ -117,7 +116,7 @@ class LCUClient(BaseAPIClient):
                     "gameMode": LobbyGameMode.Normal,
                     "mapId": SUMMONERS_RIFT_MAP_ID,
                 }
-            }
+            },
         }
         if kwargs:
             lobby_config.update(kwargs)
@@ -164,9 +163,7 @@ class LCUClient(BaseAPIClient):
         return game.participantIdentities[0].participantId
 
     async def download_replay(self, matchID: int):
-        res = await self.post(f"/lol-replays/v1/rofls/{matchID}/download/graceful", json={
-            "gameId": matchID
-        })
+        res = await self.post(f"/lol-replays/v1/rofls/{matchID}/download/graceful", json={"gameId": matchID})
         return res
 
     async def launch_replay(self, matchID: int):
@@ -175,9 +172,7 @@ class LCUClient(BaseAPIClient):
             await self.download_replay(matchID)
             await asyncio.sleep(5)
 
-        return await self.post(f"/lol-replays/v1/rofls/{matchID}/watch", json={
-            "gameId": matchID
-        })
+        return await self.post(f"/lol-replays/v1/rofls/{matchID}/watch", json={"gameId": matchID})
 
     async def get_replay_metadata(self, matchID: int):
         return await self.get(f"/lol-replays/v1/metadata/{matchID}")

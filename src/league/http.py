@@ -1,6 +1,7 @@
 import json
 import httpx
 
+
 class BaseAPIClient:
     client: httpx.AsyncClient
 
@@ -15,7 +16,6 @@ class BaseAPIClient:
         except httpx.HTTPStatusError as e:
             print(e.response.json())
             raise e
-
 
     async def get(self, *args, **kwargs):
         return await self._make_request("GET", *args, **kwargs)

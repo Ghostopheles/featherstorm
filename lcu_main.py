@@ -20,6 +20,5 @@ async def amain():
         json.dump(timeline, f, indent=4)
 
 
-
 if __name__ == "__main__":
     asyncio.run(amain())
