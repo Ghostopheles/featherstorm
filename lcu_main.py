@@ -13,6 +13,7 @@ load_dotenv()
 
 GAME_INSTALL_PATH = Path("F:/Games/Riot Games/League of Legends")
 
+
 async def amain():
     loop = asyncio.get_running_loop()
     stop = loop.create_future()
@@ -42,7 +43,6 @@ async def amain():
     await stop
 
     await client.close_websocket()
-
 
 
 if __name__ == "__main__":

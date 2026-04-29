@@ -17,10 +17,12 @@ ssl_context.verify_mode = ssl.CERT_NONE
 
 logger = logging.getLogger("lcu_socket")
 
+
 class LCUWebsocketEventType(StrEnum):
     Create = "Create"
     Update = "Update"
     Delete = "Delete"
+
 
 @dataclass
 class LCUWebsocketEvent:
@@ -33,7 +35,9 @@ class LCUWebsocketEvent:
     def __post_init__(self):
         self.eventType = LCUWebsocketEventType[self.eventType]
 
+
 type LCUWebsocketEventCallback = Callable[[LCUWebsocketEvent], Any]
+
 
 class LCUWebsocketClient:
     _port: int
@@ -69,12 +73,7 @@ class LCUWebsocketClient:
 
     async def _listen(self):
         async for socket in websockets.connect(
-            f"{SOCKET_URL}:{self._port}",
-            additional_headers=[
-                ("Authorization", self._auth)
-            ],
-            max_size=WS_MAX_SIZE,
-            ssl=ssl_context
+            f"{SOCKET_URL}:{self._port}", additional_headers=[("Authorization", self._auth)], max_size=WS_MAX_SIZE, ssl=ssl_context
         ):
             try:
                 if len(self._callbacks) == 0:

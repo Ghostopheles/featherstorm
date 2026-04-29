@@ -19,6 +19,7 @@ DEFAULT_QUEUE_ID = 430
 PRACTICE_QUEUE_ID = 3140
 SUMMONERS_RIFT_MAP_ID = 11
 
+
 @dataclass(frozen=True, slots=True)
 class LCULockfileData:
     ProcessName: str
