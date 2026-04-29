@@ -14,7 +14,7 @@ class BaseAPIClient:
             except json.decoder.JSONDecodeError:
                 return None
         except httpx.HTTPStatusError as e:
-            print(e.response.json())
+            print(e.response.text)
             raise e
 
     async def get(self, *args, **kwargs):

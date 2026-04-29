@@ -42,7 +42,7 @@ class CommunityDataDragon(BaseAPIClient):
 
         return version
 
-    def check_champion_cache(self, championID: int) -> Optional[dict]:
+    def _check_champion_cache(self, championID: int) -> Optional[dict]:
         path = DRAGON_PATH / "champion" / f"{championID}.json"
         if path.exists():
             with open(path) as f:
@@ -51,33 +51,33 @@ class CommunityDataDragon(BaseAPIClient):
         else:
             return None
 
-    def write_to_champion_cache(self, championID: int, data: dict):
+    def _write_to_champion_cache(self, championID: int, data: dict):
         path = DRAGON_PATH / "champion" / f"{championID}.json"
         with open(path, "w") as f:
             json.dump(data, f, indent=4)
 
-    def check_item_cache(self, itemID: int) -> Optional[dict]:
+    def _check_item_cache(self, itemID: int) -> Optional[dict]:
         path = DRAGON_PATH / "item" / f"{itemID}.json"
         if path.exists():
             with open(path) as f:
                 return json.load(f)
         return None
 
-    def write_to_item_cache(self, itemID: int, data: dict):
+    def _write_to_item_cache(self, itemID: int, data: dict):
         path = DRAGON_PATH / "item" / f"{itemID}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:
             json.dump(data, f, indent=4)
 
     async def get_item(self, itemID: int) -> Optional[DragonItem]:
-        data = self.check_item_cache(itemID)
+        data = self._check_item_cache(itemID)
         if data is None:
-            res = await self.official_client.get(f"/cdn/{self.latest_version}/data/en_US/item.json")
+            res = await self.client.get(f"/cdn/{self.latest_version}/data/en_US/item.json")
             res.raise_for_status()
             all_items: dict = res.json()["data"]
 
             for id_str, item in all_items.items():
-                self.write_to_item_cache(int(id_str), item)
+                self._write_to_item_cache(int(id_str), item)
 
             data = all_items.get(str(itemID))
 
@@ -91,10 +91,10 @@ class CommunityDataDragon(BaseAPIClient):
         )
 
     async def get_champion(self, championID: int) -> dict:
-        data = self.check_champion_cache(championID)
+        data = self._check_champion_cache(championID)
         if data is not None:
             return data
 
         data = await self.get(f"/champion/{championID}/data")
-        self.write_to_champion_cache(championID, data)
+        self._write_to_champion_cache(championID, data)
         return data

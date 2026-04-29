@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from league.http import BaseAPIClient
 from league.dragon import CommunityDataDragon
 from league.lcu.models import *
+from league.lcu.socket import LCUWebsocketClient, LCUWebsocketEvent, LCUWebsocketEventCallback
 
 FALLBACK_LOCKFILE_PATH = Path("F:/Games/League of Legends/lockfile")
 
@@ -17,7 +18,6 @@ RIOT_USERNAME = "riot"
 DEFAULT_QUEUE_ID = 430
 PRACTICE_QUEUE_ID = 3140
 SUMMONERS_RIFT_MAP_ID = 11
-
 
 @dataclass(frozen=True, slots=True)
 class LCULockfileData:
@@ -33,16 +33,19 @@ class LCUClient(BaseAPIClient):
         self._lockfile = self._read_lockfile(client_install_path)
 
         base_url = f"{self._lockfile.Protocol}://127.0.0.1:{self._lockfile.Port}"
+        auth = httpx.BasicAuth(
+            username=RIOT_USERNAME,
+            password=self._lockfile.Password,
+        )
         self.client = httpx.AsyncClient(
             base_url=base_url,
             verify=False,
-            auth=httpx.BasicAuth(
-                username=RIOT_USERNAME,
-                password=self._lockfile.Password,
-            ),
+            auth=auth,
         )
 
         self.dragon = CommunityDataDragon()
+
+        self.ws = LCUWebsocketClient(self._lockfile.Port, auth._auth_header)
 
     def _read_lockfile(self, client_install_path: Path) -> LCULockfileData:
         lockfile_path = client_install_path / "lockfile"
@@ -56,6 +59,29 @@ class LCUClient(BaseAPIClient):
             text = f.read()
 
         return LCULockfileData(*text.split(":"))
+
+    def on(self, event: str, callback: LCUWebsocketEventCallback):
+        return self.ws.on(event, callback)
+
+    async def start_websocket(self):
+        await self.ws.connect()
+        await self.dragon.initialize()
+
+    async def close_websocket(self):
+        await self.ws.disconnect()
+
+    async def __aenter__(self):
+        await self.start_websocket()
+        return self
+
+    async def __aexit__(self, *_):
+        await self.close_websocket()
+
+    async def is_logged_in(self):
+        return await self.get("/lol-platform-config/v1/initial-configuration-complete")
+
+    async def get_help(self):
+        return await self.get("/help")
 
     async def get_locked_champion(self) -> Optional[int]:
         champ_id = await self.get("/lol-champ-select/v1/current-champion")
