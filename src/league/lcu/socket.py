@@ -1,7 +1,6 @@
 import ssl
 import json
 import asyncio
-import logging
 import websockets
 
 from rich import print
@@ -14,8 +13,6 @@ WS_MAX_SIZE = 2**32
 ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
 ssl_context.check_hostname = False
 ssl_context.verify_mode = ssl.CERT_NONE
-
-logger = logging.getLogger("lcu_socket")
 
 
 class LCUWebsocketEventType(StrEnum):

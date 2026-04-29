@@ -34,7 +34,8 @@ async def amain():
             return
 
         champion = await client.dragon.get_champion(champID)
-        print(champion)
+        champ_name = champion.get("name")
+        print(f"You've locked in {champ_name}. See the build: https://onetricks.gg/champions/builds/{champ_name}")
 
     client.on("OnJsonApiEvent_lol-champ-select_v1_current-champion", on_champion_selected)
 

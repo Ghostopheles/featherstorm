@@ -7,7 +7,7 @@ from typing import Optional
 from dataclasses import dataclass
 
 from league.http import BaseAPIClient
-from league.dragon import CommunityDataDragon
+from league.dragon import DataDragon
 from league.lcu.models import *
 from league.lcu.socket import LCUWebsocketClient, LCUWebsocketEvent, LCUWebsocketEventCallback
 
@@ -44,7 +44,7 @@ class LCUClient(BaseAPIClient):
             auth=auth,
         )
 
-        self.dragon = CommunityDataDragon()
+        self.dragon = DataDragon()
 
         self.ws = LCUWebsocketClient(self._lockfile.Port, auth._auth_header)
 
