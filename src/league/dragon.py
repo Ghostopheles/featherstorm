@@ -99,7 +99,9 @@ class CommunityDataDragon(BaseAPIClient):
         self._write_to_champion_cache(championID, data)
         return data
 
+
 DRAGON_URL = "https://ddragon.leagueoflegends.com"
+
 
 class DataDragon(BaseAPIClient):
     lookup: dict | None = None
@@ -149,10 +151,7 @@ class DataDragon(BaseAPIClient):
             return None
 
     def _write_champion_lookup(self, data: dict):
-        lookup = {
-            "by-id": {},
-            "by-name": {}
-        }
+        lookup = {"by-id": {}, "by-name": {}}
 
         for name, entry in data.items():
             key = entry["key"]
