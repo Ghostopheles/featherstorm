@@ -3,14 +3,13 @@ name = "featherstorm"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "chroma",
     "govee",
     "httpx[http2]>=0.28.1",
     "pydantic>=2.12.5",
     "python-dotenv>=1.2.1",
-    "pyyaml>=6.0.3",
     "rich>=14.3.3",
     "toml>=0.10.2",
     "typer>=0.24.1",
@@ -20,7 +19,7 @@ dependencies = [
 featherstorm = "league.cli:app"
 
 [build-system]
-requires = ["uv_build>=0.9.21"]
+requires = ["uv_build==0.11.7"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]

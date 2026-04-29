@@ -5,8 +5,6 @@ import httpx
 import typer
 import atexit
 import asyncio
-import logging
-import logging.config
 
 from dotenv import load_dotenv
 
@@ -35,29 +33,6 @@ from league.enums import QueueType
 from govee import GoveeConnectionListener, GoveeColor
 
 PROJECT_DIR = Path(__file__).parent.parent.parent
-
-log_file_path = PROJECT_DIR / "logs"
-log_file_path.mkdir(exist_ok=True)
-
-log_cfg_path = PROJECT_DIR / "log_config.yaml"
-
-with open(log_cfg_path) as f:
-    log_cfg = yaml.safe_load(f)
-logging.config.dictConfig(log_cfg)
-
-queue_handler = logging.getHandlerByName("queue_handler")
-if queue_handler is not None:
-    queue_handler.listener.start()
-    atexit.register(queue_handler.listener.stop)
-
-logger = logging.getLogger("league")
-
-logger.info(f"Using Python version {sys.version}")
-
-# disable noisy loggers >:(
-logging.getLogger("httpx").propagate = False
-logging.getLogger("httpcore.http11").propagate = False
-
 DATA_PATH = PROJECT_DIR / "data"
 
 CHROMA_APP_INFO = {

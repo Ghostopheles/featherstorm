@@ -1,10 +1,5 @@
-import sys
-import yaml
 import httpx
-import atexit
 import asyncio
-import logging
-import logging.config
 
 from rich import print
 from pathlib import Path
@@ -25,28 +20,6 @@ from league.models import GameEventType, GameTeam, GameEvent
 from govee import GoveeConnectionListener, GoveeColor
 
 GOVEE_REQUEST_TIMEOUT = 0.5
-
-log_file_path = Path(__file__).with_name("logs")
-log_file_path.mkdir(exist_ok=True)
-
-log_cfg_path = Path(__file__).with_name("log_config.yaml")
-
-with open(log_cfg_path) as f:
-    log_cfg = yaml.safe_load(f)
-logging.config.dictConfig(log_cfg)
-
-queue_handler = logging.getHandlerByName("queue_handler")
-if queue_handler is not None:
-    queue_handler.listener.start()
-    atexit.register(queue_handler.listener.stop)
-
-logger = logging.getLogger("league")
-
-logger.info(f"Using Python version {sys.version}")
-
-# disable noisy loggers >:(
-logging.getLogger("httpx").propagate = False
-logging.getLogger("httpcore.http11").propagate = False
 
 SELF_PATH = Path(__file__).parent
 DATA_PATH = SELF_PATH / "data"
