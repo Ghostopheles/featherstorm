@@ -16,3 +16,5 @@ logs/
 ref/
 .ruff_cache/
 .vscode
+
+.claude/settings.local.json

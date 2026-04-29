@@ -6,12 +6,13 @@ import asyncio
 from pathlib import Path
 
 from league.lcu.lcu import LCUClient
+from league.lcu.timeline import LCUTimelineAnalyzer, LCUHighlightEvent
 from league.riot_api import RiotAPIClient
 
 LAUNCH_POLL_INTERVAL = 1
 LAUNCH_TIMEOUT = 60
 DOWNLOAD_CHUNK_SIZE = 8192
-CLIP_DURATION = 30 # seconds
+CLIP_DURATION = 10 # seconds
 GAME_CLIENT_NAME = "League of Legends.exe"
 
 REPLAY_API_URL = "https://127.0.0.1:2999/replay"
@@ -75,16 +76,27 @@ class HighlightManager:
         await obj.__init(name, tag, api_key)
         return obj
 
-    async def capture(self):
-        history = await self.lcu.get_recent_match_ids()
+    async def capture_highlights_for_match(self, matchID: int):
+        timeline = await self.lcu.get_match_timeline(matchID)
+        playerParticipantID = await self.lcu.get_player_participant_id(matchID)
+        analyzer = LCUTimelineAnalyzer(playerParticipantID, timeline)
+        events = analyzer.get_highlight_info()
 
-        first = history[0]
-        timestamps = [
-            (110.0, 130.0)
-        ]
-        await self.open_replay(first)
+        buffer = 7
+        timestamps = []
+        for event in events:
+            time = event.timestamp / 1000
+            timestamps.append(
+                (time - buffer, time + buffer)
+            )
+
+        await self.open_replay(matchID)
         await self.wait_for_replay_ready()
         await self.record(timestamps)
+
+    async def capture_highlights_for_last_match(self):
+        matchID = await self.lcu.get_last_match_id()
+        return await self.capture_highlights_for_match(matchID)
 
     async def wait_for_replay_ready(self):
         deadline = asyncio.get_event_loop().time() + LAUNCH_TIMEOUT
@@ -116,8 +128,7 @@ class HighlightManager:
         await self.http.post(REPLAY_API_URL + "/playback", json={
             "paused": True
         })
-        print("WAITING FOR SHIT PC")
-        await asyncio.sleep(10)
+        await asyncio.sleep(5)
 
         start_time, end_time = time_ranges[0]
         res = await self.http.post(REPLAY_API_URL + "/playback", json={
@@ -126,7 +137,6 @@ class HighlightManager:
             "speed": 1.0,
             "time": start_time - 5
         })
-        print("playing ")
         res.raise_for_status()
 
         await asyncio.sleep(1)
@@ -151,7 +161,6 @@ class HighlightManager:
         end_rec = await self.http.post(REPLAY_API_URL + "/recording", json={
             "recording": False
         })
-        print("ending recording")
         end_rec.raise_for_status()
 
         await self.close_active_replay()

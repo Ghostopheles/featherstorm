@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from league.http import BaseAPIClient
 from league.dragon import CommunityDataDragon
-from league.lcu.models import MyChampSelection, Summoner, LobbyGameMode, LobbyType
+from league.lcu.models import *
 
 FALLBACK_LOCKFILE_PATH = Path("F:/Games/League of Legends/lockfile")
 
@@ -131,16 +131,37 @@ class LCUClient(BaseAPIClient):
         res = await self.get("/lol-summoner/v1/current-summoner")
         return Summoner(**res)
 
-    async def get_match_history(self) -> dict:
+    async def get_match(self, matchID: int) -> LCUMatch:
+        res = await self.get(f"/lol-match-history/v1/games/{matchID}")
+        return LCUMatch(**res)
+
+    async def get_match_history(self) -> LCUMatchHistory:
         res = await self.get("/lol-match-history/v1/products/lol/current-summoner/matches")
-        return res
+        return LCUMatchHistory(**res)
 
     async def get_recent_match_ids(self) -> list[int]:
         history = await self.get_match_history()
+        return [g.gameId for g in history.games.games]
 
-        games = history.get("games").get("games")
-        match_ids = [g.get("gameId") for g in games]
-        return match_ids
+    async def get_last_match(self) -> LCUMatch:
+        history = await self.get_match_history()
+        return history.games.games[0]
+
+    async def get_last_match_id(self) -> int:
+        last_match = await self.get_last_match()
+        return last_match.gameId
+
+    async def get_match_timeline(self, matchID: int) -> LCUTimeline:
+        res = await self.get(f"/lol-match-history/v1/game-timelines/{matchID}")
+        return LCUTimeline(**res)
+
+    async def get_raw_match_timeline(self, matchID: int) -> dict:
+        res = await self.get(f"/lol-match-history/v1/game-timelines/{matchID}")
+        return res
+
+    async def get_player_participant_id(self, matchID: int) -> int:
+        game = await self.get_match(matchID)
+        return game.participantIdentities[0].participantId
 
     async def download_replay(self, matchID: int):
         res = await self.post(f"/lol-replays/v1/rofls/{matchID}/download/graceful", json={

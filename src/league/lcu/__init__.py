@@ -1,1 +1,1 @@
-from league.lcu.lcu import LCUClient
+from league.lcu.lcu import LCUClient, LCUTimeline
