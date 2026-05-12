@@ -587,6 +587,7 @@ class TimelineEvent(BaseModel):
     # Kill details
     killType: Optional[str] = None
     killStreakLength: Optional[int] = None
+    multiKillLength: Optional[int] = None
     bounty: Optional[int] = None
     shutdownBounty: Optional[int] = None
     # Shared position
@@ -595,24 +596,10 @@ class TimelineEvent(BaseModel):
     winningTeam: Optional[int] = None
 
 
-_HIGH_SIGNAL_EVENTS = {
-    "CHAMPION_KILL",
-    "ELITE_MONSTER_KILL",
-    "BUILDING_KILL",
-    "TURRET_PLATE_DESTROYED",
-    "GAME_END",
-}
-
-
 class TimelineFrame(BaseModel):
     timestamp: int
     participantFrames: dict[str, ParticipantFrameDto]
     events: list[TimelineEvent]
-
-    @model_validator(mode="after")
-    def filter_events(self) -> "TimelineFrame":
-        self.events = [e for e in self.events if e.type in _HIGH_SIGNAL_EVENTS]
-        return self
 
 
 class TimelineParticipant(BaseModel):

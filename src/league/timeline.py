@@ -30,6 +30,15 @@ def event_victim_is_participant(targetParticipantID: int, obj: TimelineEvent, **
     """Match events where the victim is a specific participant. Args: [1]"""
     return obj.victimId == targetParticipantID
 
+@rule
+def event_is_kill_type(kill_type: str, obj: TimelineEvent, **kwargs) -> bool:
+    """Match events with a specific killType. Args: [killType]"""
+    return obj.killType == kill_type
+
+@rule
+def event_has_multikill_length(length: int, obj: TimelineEvent, **kwargs) -> bool:
+    """Match multikill events with at least the specified killstreak length. Args: [1]"""
+    return obj.multiKillLength is not None and obj.multiKillLength >= length
 
 BATCH_WINDOW_MS = 20_000
 
@@ -84,9 +93,11 @@ class MatchTimelineAnalyzer:
 
     def __init_rules(self):
         self.HIGHLIGHT_RULES = {  # using OR logic
-            event_type_is("CHAMPION_KILL") & event_caused_by_participant(self.targetParticipantID),
-            event_type_is("ELITE_MONSTER_KILL")
-            & (event_caused_by_participant(self.targetParticipantID) | event_assisted_by_participant(self.targetParticipantID)),
+            event_type_is("CHAMPION_SPECIAL_KILL") & (
+                event_caused_by_participant(self.targetParticipantID) &
+                event_is_kill_type("KILL_MULTI") &
+                event_has_multikill_length(2)
+            )
         }
 
     def __is_event_relevant(self, event: TimelineEvent) -> bool:
