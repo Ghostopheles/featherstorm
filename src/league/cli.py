@@ -234,7 +234,17 @@ async def amain(govee: bool):
 
 config.init()
 
-app = typer.Typer(name=APP_NAME, no_args_is_help=True)
+def try_get_cfg_or_input(category: str, key: str, prompt: str, *args, **kwargs):
+    value = config.get(key, category)
+    if value is not None:
+        return value, False
+
+    prompt = f"[featherstorm]{prompt}[/]: "
+    value = console.input(prompt, *args, **kwargs)
+    return value, True
+
+
+app = typer.Typer(name=APP_NAME, no_args_is_help=True, add_completion=False)
 
 @app.callback()
 def app_main():
@@ -292,18 +302,23 @@ def view_cfg(category: Optional[str] = None):
 
 
 @cfg_app.command(name="get", help="Get a saved config value")
-def get_cfg_value(key: str, category: Optional[str] = None):
+def get_cfg_value(category: str, key: str):
     value = config.get(key, category)
-    print(f"{category + '.' if category else ''}{key}: {value}")
+    print(f"[featherstorm]{category + '.' if category else ''}{key}[/]=[gold]{value}[/]")
 
 
 @cfg_app.command(name="set", help="Set a saved config value")
-def set_cfg_value(key: str, value: str, category: Optional[str] = None):
+def set_cfg_value(category: str, key: str, value: str):
     config.set(key, value, category)
+    print(f"[featherstorm]{category + "." if category else ""}{key}[/]=[gold]{value}[/]")
 
+@cfg_app.command(name="clear", help="Clear a saved config value")
+def clear_cfg_value(category: str, key: str):
+    config.clear(key, category)
+    print(f"Cleared [featherstorm]{category + "." if category else ""}{key}[/]")
 
 @cfg_app.command(name="reset", help="Reset saved configuration back to defaults")
-def set_cfg_value(force: Optional[bool] = False):
+def reset_cfg(force: Optional[bool] = False):
     if config.init(force):
         print("Config reset.")
     else:
@@ -382,17 +397,37 @@ app.add_typer(highlights_app)
 
 @highlights_app.command(name="capture", help="Capture highlights from your last match.")
 def capture_highlights(
-    game_path: Path = Path(config.get("client_install_path", "lcu")),
-    highlights_path: Path = Path(config.get("highlights_path", "highlights")),
-    name: str = config.get("default_player_name", "companion"),
-    tagline: str = config.get("default_player_tagline", "companion"),
-    count: int = None
+    game_path: Optional[Path] = None,
+    export_path: Optional[Path] = None,
+    name: Optional[str] = config.get("default_player_name", "companion"),
+    tagline: Optional[str] = config.get("default_player_tagline", "companion"),
+    count: Optional[int] = None
 ):
     load_dotenv()
     api_key = os.getenv("RIOT_API_KEY")
 
+    if game_path is None:
+        path, was_input = try_get_cfg_or_input("lcu", "client_install_path", "League of Legends install path")
+        game_path = Path(path)
+        if was_input:
+            if game_path.exists() and game_path.is_dir():
+                config.set("client_install_path", game_path.as_posix(), category="lcu")
+                print(f"Saved client install path ([featherstorm]{game_path.as_posix()}[/]) to config")
+            else:
+                raise SystemError("you've given me a bungus game path")
+
+    if export_path is None:
+        path, was_input = try_get_cfg_or_input("highlights", "export_path", "Highlights export path")
+        export_path = Path(path)
+        if was_input:
+            if export_path.exists() and export_path.is_dir():
+                config.set("export_path", export_path.as_posix(), category="highlights")
+                print(f"Saved highlight export path ([featherstorm]{export_path.as_posix()}[/]) to config")
+            else:
+                raise SystemError("you've given me a bungus export path")
+
     async def run():
-        highlights = await HighlightManager.create(name, tagline, game_path, highlights_path, api_key)
+        highlights = await HighlightManager.create(name, tagline, game_path, export_path, api_key)
         last_match_id = await highlights.get_last_match_id()
         await highlights.capture_highlights_for_match(last_match_id, numHighlights=count)
 

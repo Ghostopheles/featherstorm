@@ -16,6 +16,7 @@ THEME = Theme({
     "dark_xayah": DARK_XAYAH,
     "rakan": RAKAN,
     "dark_rakan": DARK_RAKAN,
+    "gold": GOLD,
     "featherstorm": f"bold {XAYAH}",
     "heading": f"bold {RAKAN}",
     "highlights": f"bold {RAKAN}",

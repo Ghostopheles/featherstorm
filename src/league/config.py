@@ -64,7 +64,12 @@ def init(force: bool = False) -> bool:
 
 def get(key: str, category: str | None = None) -> Any:
     cfg = _load()
-    return cfg[category][key] if category else cfg[key]
+    if category:
+        cat = cfg.get(category)
+        if cat:
+            return cat.get(key)
+
+    return cfg.get(key)
 
 def get_category(category: str) -> Any:
     cfg = _load()
@@ -76,4 +81,12 @@ def set(key: str, value: Any, category: str | None = None) -> None:
         cfg.setdefault(category, {})[key] = value
     else:
         cfg[key] = value
+    _write()
+
+def clear(key: str, category: str | None = None) -> None:
+    cfg = _load()
+    if category:
+        cfg.setdefault(category, {})[key] = None
+    else:
+        cfg[key] = None
     _write()
