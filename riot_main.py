@@ -15,6 +15,8 @@ GAME_INSTALL_PATH = Path("F:/Games/Riot Games/League of Legends")
 CACHE_PATH = Path("./data")
 HIGHLIGHTS_PATH = CACHE_PATH / "highlights"
 
+EXPORTED_PATH = Path("X:/featherstorm/data/highlights/NA1_5558760312/NA1_5549854658_0.webm")
+
 MATCH_ID = "NA1_5549854658"
 
 NAME = "Dallas N Tollway"
@@ -27,7 +29,7 @@ async def amain():
     highlights = await HighlightManager.create(NAME, TAGLINE, GAME_INSTALL_PATH, HIGHLIGHTS_PATH, api_key)
     #matchID = await highlights.get_last_match_id()
     #await highlights.capture_highlights_for_match(matchID, numHighlights=1)
-    highlights.test()
+    await highlights.compress_many_highlights([EXPORTED_PATH])
 
 
 

@@ -36,7 +36,7 @@ CAMERA_SELECTION_OFFSET = {"x": 0, "y": 2200, "z": -1400}
 REPLAY_API_URL = "https://127.0.0.1:2999/replay"
 
 def print(*args, **kwargs):
-    prefix = rf"[highlights]\[{__name__}][/]:"
+    prefix = rf"[highlights]\[highlights][/]:"
     console.print(prefix, *args, **kwargs)
 
 class HighlightManager:
@@ -400,11 +400,12 @@ class HighlightManager:
 
     async def compress_many_highlights(self, paths: list[Path]):
         with Progress(
-            TextColumn("[featherstorm]Compressing highlights...[/]"),
-            BarColumn(),
+            BarColumn(bar_width=None),
             MofNCompleteColumn(),
             TimeElapsedColumn(),
+            TextColumn("[featherstorm]Compressing highlights...[/]"),
             console=console,
+            expand=True
         ) as progress:
             overall = progress.add_task("", total=len(paths))
 
