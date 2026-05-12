@@ -1,4 +1,5 @@
-from typing import Callable, Any
+from pathlib import Path
+from typing import Callable, Any, Union
 
 from rich.theme import Theme
 from rich.console import Console
@@ -21,7 +22,9 @@ THEME = Theme({
     "heading": f"bold {RAKAN}",
     "highlights": f"bold {RAKAN}",
     "highlights_match_id": "bold blue",
-    "warning": f"bold underline {XAYAH}"
+    "warning": f"bold underline {XAYAH}",
+    "eminence": f"bold {GOLD}",
+    "file": f"bold underline {GOLD}"
 })
 
 console = Console(theme=THEME)
@@ -37,3 +40,9 @@ def get_printer(prefix: str) -> Callable[[Any], None]:
     def _print(*args, **kwargs):
         console.print(prefix, *args, **kwargs)
     return _print
+
+def format_file_path(path: Union[Path, str]):
+    if isinstance(path, Path):
+        path = path.as_posix()
+
+    return f"[file][link=file://{path}]{path}[/link][/]"

@@ -27,7 +27,7 @@ from league.riot_api import RiotAPIClient
 from league.dragon import CommunityDataDragon
 from league.enums import QueueType
 from league.highlights import HighlightManager
-from league.console import print, console
+from league.console import print, console, format_file_path
 
 from govee import GoveeConnectionListener, GoveeColor
 
@@ -412,7 +412,7 @@ def capture_highlights(
         if was_input:
             if game_path.exists() and game_path.is_dir():
                 config.set("client_install_path", game_path.as_posix(), category="lcu")
-                print(f"Saved client install path ([featherstorm]{game_path.as_posix()}[/]) to config")
+                print(f"Saved client install path ({format_file_path(game_path)}) to config")
             else:
                 raise SystemError("you've given me a bungus game path")
 
@@ -422,7 +422,7 @@ def capture_highlights(
         if was_input:
             if export_path.exists() and export_path.is_dir():
                 config.set("export_path", export_path.as_posix(), category="highlights")
-                print(f"Saved highlight export path ([featherstorm]{export_path.as_posix()}[/]) to config")
+                print(f"Saved highlight export path ({format_file_path(export_path)}) to config")
             else:
                 raise SystemError("you've given me a bungus export path")
 

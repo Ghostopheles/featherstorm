@@ -17,7 +17,7 @@ from league.models import PlayerMatch, TimelineEvent, MatchTimeline
 from league.enums import QueueType
 from league.timeline import MatchTimelineAnalyzer, HighlightEvent
 from league.riot_api import RiotAPIClient
-from league.console import console
+from league.console import console, format_file_path
 
 LAUNCH_POLL_INTERVAL = 1
 LAUNCH_TIMEOUT = 60
@@ -353,7 +353,7 @@ class HighlightManager:
                 break
 
             idx = i + 1
-            print(f"Capturing highlight [bold blue]{idx}[/]...")
+            print(f"Capturing highlight [highlights_match_id]{idx}[/]...")
 
             timestamp = batch.timestamp
 
@@ -386,7 +386,7 @@ class HighlightManager:
                 status.update("Recording...")
                 await self.wait_for_recording()
 
-            print(f"Captured highlight [bold blue]{idx}[/]!")
+            print(f"Captured highlight [highlights_match_id]{idx}[/]!")
             raw_highlight_paths.append(file_path)
 
         print(f"Done capturing highlights - exiting in {REALITY_CHECK_BUFFER} seconds...")
@@ -411,12 +411,12 @@ class HighlightManager:
             async def _track(path: Path):
                 result = await self.compress_highlight(path)
                 progress.update(overall, advance=1)
-                print(f"Highlight saved to [bold blue]{result.as_posix()}[/]")
+                print(f"Highlight saved to {format_file_path(result)}")
                 return result
 
             await asyncio.gather(*[_track(p) for p in paths])
 
-        print("Done compressing highlights")
+        print(":cherry_blossom: Done compressing highlights")
 
 
     async def compress_highlight(self, file_path: Path) -> Path:
@@ -451,6 +451,3 @@ class HighlightManager:
         file_path.unlink()
 
         return dest
-
-    def test(self):
-        print("The quick brown fox jumps over the lazy dog.")
