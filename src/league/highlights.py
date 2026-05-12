@@ -3,6 +3,11 @@ import httpx
 import signal
 import asyncio
 
+from rich.progress import (
+    Progress, BarColumn, TextColumn,
+    MofNCompleteColumn, TimeElapsedColumn,
+)
+
 from pathlib import Path
 
 import league.config as cfg
@@ -163,17 +168,30 @@ class HighlightManager:
         return analyzer.get_all_events()
 
     async def capture_highlights_for_match(self, matchID: str, numHighlights: int = None):
-        print(f"Capturing {numHighlights} highlight(s) for match [bold blue]{matchID}[/]")
+        print(f"Capturing {numHighlights} highlight(s) for match [highlights_match_id]{matchID}[/]")
 
-        events = await self.get_highlight_events(matchID)
-        events.sort(key=lambda x: x.timestamp)  # sort by the start time
+        with console.status("", spinner="simpleDotsScrolling", spinner_style="featherstorm") as status:
+            status.update("Fetching highlight events...")
+            events = await self.get_highlight_events(matchID)
+            events.sort(key=lambda x: x.timestamp)  # sort by the start time
 
-        match = await self.get_match(matchID)
-        self.__current_match = match
+            status.update("Fetching match data...")
+            match = await self.get_match(matchID)
+            self.__current_match = match
 
-        await self.open_replay(matchID)
-        await self.wait_for_replay_ready()
-        await self.record(events, numHighlights)
+            status.update("Opening replay file...")
+            await self.open_replay(matchID)
+            await self.wait_for_replay_ready()
+        try:
+            await self.record(events, numHighlights)
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            print("[warning]Cancelled[/] - pausing replay and ending recording...")
+            try:
+                await self.pause()
+                await self.stop_recording()
+            except Exception:
+                pass
+            raise
 
     async def wait_for(self, func):
         deadline = asyncio.get_event_loop().time() + LAUNCH_TIMEOUT
@@ -330,7 +348,6 @@ class HighlightManager:
         await self.hide_replay_ui()
 
         raw_highlight_paths = []
-
         for i, batch in enumerate(events):
             if numHighlights is not None and i >= numHighlights:
                 break
@@ -340,29 +357,36 @@ class HighlightManager:
 
             timestamp = batch.timestamp
 
-            start_time = max(0, timestamp - LEAD_BUFFER)
-            length = batch.event_length
-            end_time = timestamp + length + TRAIL_BUFFER
-            await self.seek_to(timestamp)
+            with console.status("Recording...", spinner="dots2", spinner_style="featherstorm") as status:
+                start_time = max(0, timestamp - LEAD_BUFFER)
+                length = batch.event_length
+                end_time = timestamp + length + TRAIL_BUFFER
+                status.update("Seeking...")
+                await self.seek_to(timestamp)
 
-            await self.wait_for_seek()
+                status.update("Buffering...")
+                await self.wait_for_seek()
 
-            await self.track_player_with_camera()
+                status.update("Tracking player...")
+                await self.track_player_with_camera()
 
-            await self.resume()
+                status.update("Resuming playback...")
+                await self.resume()
 
-            matchID = self.__current_match.matchId
-            file_name = f"highlight_{idx}.webm"
+                matchID = self.__current_match.matchId
+                file_name = f"highlight_{idx}.webm"
 
-            file_dir = (self.cache_path / matchID)
-            file_dir.mkdir(parents=True, exist_ok=True)
+                file_dir = (self.cache_path / matchID)
+                file_dir.mkdir(parents=True, exist_ok=True)
 
-            file_path = (file_dir / file_name).resolve()
-            await self.start_recording(file_path.as_posix(), start_time, end_time)
+                status.update("Configuring recording...")
+                file_path = (file_dir / file_name).resolve()
+                await self.start_recording(file_path.as_posix(), start_time, end_time)
 
-            await self.wait_for_recording()
+                status.update("Recording...")
+                await self.wait_for_recording()
+
             print(f"Captured highlight [bold blue]{idx}[/]!")
-
             raw_highlight_paths.append(file_path)
 
         print(f"Done capturing highlights - exiting in {REALITY_CHECK_BUFFER} seconds...")
@@ -375,8 +399,25 @@ class HighlightManager:
         return True
 
     async def compress_many_highlights(self, paths: list[Path]):
-        tasks = [self.compress_highlight(path) for path in paths]
-        await asyncio.gather(*tasks)
+        with Progress(
+            TextColumn("[featherstorm]Compressing highlights...[/]"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            overall = progress.add_task("", total=len(paths))
+
+            async def _track(path: Path):
+                result = await self.compress_highlight(path)
+                progress.update(overall, advance=1)
+                print(f"Highlight saved to [bold blue]{result.as_posix()}[/]")
+                return result
+
+            await asyncio.gather(*[_track(p) for p in paths])
+
+        print("Done compressing highlights")
+
 
     async def compress_highlight(self, file_path: Path) -> Path:
         dest = file_path.with_suffix(".mp4")
@@ -406,9 +447,9 @@ class HighlightManager:
         _, stderr = await proc.communicate()
         if proc.returncode != 0:
             raise RuntimeError(f"ffmpeg failed: {stderr.decode()}")
+
         file_path.unlink()
 
-        print(f"Highlight saved to [bold blue]{dest.as_posix()}[/]")
         return dest
 
     def test(self):

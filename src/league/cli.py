@@ -18,6 +18,7 @@ from chroma import (
     ChromaAnimation,
 )
 
+from league.constants import APP_NAME
 from league.lcu import LCUClient
 from league.api import LeagueClient
 from league import config
@@ -26,7 +27,7 @@ from league.riot_api import RiotAPIClient
 from league.dragon import CommunityDataDragon
 from league.enums import QueueType
 from league.highlights import HighlightManager
-from league.console import print
+from league.console import print, console
 
 from govee import GoveeConnectionListener, GoveeColor
 
@@ -233,8 +234,11 @@ async def amain(govee: bool):
 
 config.init()
 
-app = typer.Typer(name="Featherstorm", no_args_is_help=True)
+app = typer.Typer(name=APP_NAME, no_args_is_help=True)
 
+@app.callback()
+def app_main():
+    console.rule(f"[featherstorm]{APP_NAME.title()}[/]", style="dark_xayah")
 
 @app.command(name="companion", help="Runs the app in it's default mode, watching the current ongoing match.")
 def default(govee: Optional[bool] = True):

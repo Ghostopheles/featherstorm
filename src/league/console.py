@@ -3,11 +3,13 @@ from typing import Callable, Any
 from rich.theme import Theme
 from rich.console import Console
 
-DARK_XAYAH = "#680a31"
-XAYAH = "#840e3e"
+DARK_XAYAH = "#840e3e"
+XAYAH = "#b01d5d"
 
 DARK_RAKAN = "magenta"
 RAKAN = "#cba6f7"
+
+GOLD = "#c3a17c"
 
 THEME = Theme({
     "xayah": XAYAH,
@@ -16,7 +18,9 @@ THEME = Theme({
     "dark_rakan": DARK_RAKAN,
     "featherstorm": f"bold {XAYAH}",
     "heading": f"bold {RAKAN}",
-    "highlights": f"bold {RAKAN}"
+    "highlights": f"bold {RAKAN}",
+    "highlights_match_id": "bold blue",
+    "warning": f"bold underline {XAYAH}"
 })
 
 console = Console(theme=THEME)
