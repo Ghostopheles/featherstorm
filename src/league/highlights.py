@@ -6,8 +6,9 @@ import asyncio
 from pathlib import Path
 
 from league.lcu.lcu import LCUClient
-from league.lcu.models import LCUTimelineEvent, LCUMatch
-from league.lcu.timeline import LCUTimelineAnalyzer, LCUHighlightEvent, LCUTimeline
+from league.models import PlayerMatch, TimelineEvent, MatchTimeline
+from league.enums import QueueType
+from league.timeline import MatchTimelineAnalyzer, HighlightEvent
 from league.riot_api import RiotAPIClient
 
 LAUNCH_POLL_INTERVAL = 1
@@ -32,6 +33,12 @@ class HighlightManager:
     puuid: str | None = None
 
     http: httpx.AsyncClient | None = None
+
+    __matches: list[PlayerMatch] | None = None
+    __match_cache: dict[str, PlayerMatch] | None = None
+    __timeline_cache: dict[str, MatchTimeline] | None = None
+
+    __current_match: PlayerMatch | None = None
 
     def __init__(self, game_path: Path, cache_path: Path):
         if not game_path.exists():
@@ -81,47 +88,72 @@ class HighlightManager:
         await obj.__init(name, tag, api_key)
         return obj
 
-    async def get_last_match(self) -> LCUMatch:
-        return await self.lcu.get_last_match()
+    @staticmethod
+    def get_player_participant_id(match: PlayerMatch) -> int:
+        return match.player.participantId
 
-    async def get_last_match_id(self) -> int:
-        return await self.lcu.get_last_match_id()
+    async def get_match(self, matchID: str) -> PlayerMatch:
+        if self.__match_cache is None:
+            self.__match_cache = {}
+            match = await self.riot.get_player_match(matchID, self.puuid)
+            self.__match_cache.setdefault(matchID, match)
 
-    async def get_timeline_for_match(self, matchID: int) -> LCUTimeline:
-        timeline = await self.lcu.get_match_timeline(matchID)
-        return timeline
+        return self.__match_cache.get(matchID)
 
-    async def get_highlight_events_for_last_match(self) -> list[LCUHighlightEvent]:
-        matchID = await self.get_last_match_id()
-        return await self.get_highlight_events(matchID)
+    async def get_recent_matches(self, count: int = None) -> list[PlayerMatch]:
+        if self.__matches is None:
+            self.__matches = await self.riot.get_recent_matches(self.puuid, count=count, match_type=QueueType.Normal)
 
-    async def get_highlight_events(self, matchID: int) -> list[LCUHighlightEvent]:
+            self.__match_cache = {
+                match.matchId: match for match in self.__matches
+            }
+
+        return self.__matches
+
+    async def get_last_match(self) -> PlayerMatch:
+        matches = await self.get_recent_matches()
+        return matches[0]
+
+    async def get_last_match_id(self) -> str:
+        match = await self.get_last_match()
+        return match.matchId
+
+    async def get_timeline_for_match(self, matchID: str) -> MatchTimeline:
+        if self.__timeline_cache is None:
+            self.__timeline_cache = {}
+            timeline = await self.riot.get_match_timeline(matchID)
+            self.__timeline_cache.setdefault(matchID, timeline)
+
+        return self.__timeline_cache.get(matchID)
+
+    async def get_highlight_events(self, matchID: str) -> list[HighlightEvent]:
         timeline = await self.get_timeline_for_match(matchID)
-        playerParticipantID = await self.lcu.get_player_participant_id(matchID)
-        analyzer = LCUTimelineAnalyzer(playerParticipantID, timeline)
+
+        match = await self.get_match(matchID)
+        playerParticipantID = self.get_player_participant_id(match)
+
+        analyzer = MatchTimelineAnalyzer(playerParticipantID, timeline)
         return analyzer.get_highlight_events()
 
-    async def get_all_events_for_last_match(self) -> list[LCUTimelineEvent]:
-        matchID = await self.get_last_match_id()
-        return await self.get_all_events_for_match(matchID)
-
-    async def get_all_events_for_match(self, matchID: int) -> list[LCUTimelineEvent]:
+    async def get_all_events_for_match(self, matchID: str) -> list[TimelineEvent]:
         timeline = await self.get_timeline_for_match(matchID)
-        playerParticipantID = await self.lcu.get_player_participant_id(matchID)
-        analyzer = LCUTimelineAnalyzer(playerParticipantID, timeline)
+
+        match = await self.get_match(matchID)
+        playerParticipantID = self.get_player_participant_id(match)
+
+        analyzer = MatchTimelineAnalyzer(playerParticipantID, timeline)
         return analyzer.get_all_events()
 
-    async def capture_highlights_for_match(self, matchID: int, numHighlights: int = None):
+    async def capture_highlights_for_match(self, matchID: str, numHighlights: int = None):
         events = await self.get_highlight_events(matchID)
         events.sort(key=lambda x: x.timestamp) # sort by the start time
+
+        match = await self.get_match(matchID)
+        self.__current_match = match
 
         await self.open_replay(matchID)
         await self.wait_for_replay_ready()
         await self.record(events, numHighlights)
-
-    async def capture_highlights_for_last_match(self, numHighlights: int = None):
-        matchID = await self.get_last_match_id()
-        return await self.capture_highlights_for_match(matchID, numHighlights)
 
     async def wait_for_replay_ready(self):
         deadline = asyncio.get_event_loop().time() + LAUNCH_TIMEOUT
@@ -149,7 +181,8 @@ class HighlightManager:
             await asyncio.sleep(LAUNCH_POLL_INTERVAL)
         raise TimeoutError("Timeout waiting for seek")
 
-    async def open_replay(self, matchID: int):
+    async def open_replay(self, matchID: str):
+        matchID = matchID.replace("NA1_", "") # need to remove prefix since the LCU doesn't use them
         await self.lcu.launch_replay(matchID)
 
     async def close_active_replay(self):
@@ -186,17 +219,31 @@ class HighlightManager:
         res.raise_for_status()
         return res.json()
 
+    async def lock_camera_to_player(self):
+        if self.__current_match is None:
+            return
+
+        camera_json = {
+            "cameraMode": "focus",
+            "cameraAttached": True,
+            "selectionName": self.__current_match.player.championName,
+        }
+
+        res = await self.http.post(REPLAY_API_URL + "/render", json=camera_json)
+        res.raise_for_status()
+        return res.json()
+
     async def start_recording(
             self,
             file_name: str,
             start_time: float,
             end_time: float,
-            width: int = 2560,
-            height: int = 1440,
+            width: int = 1280,
+            height: int = 720,
             fps: int = 60,
             lossless: bool = True,
             codec: str = "webm",
-            encforce_frame_rate: bool = True
+            enforce_frame_rate: bool = False
         ):
         res = await self.http.post(
             REPLAY_API_URL + "/recording",
@@ -210,7 +257,7 @@ class HighlightManager:
                 "startTime": start_time,
                 "endTime": end_time,
                 "framesPerSecond": fps,
-                "enforceFrameRate": encforce_frame_rate
+                "enforceFrameRate": enforce_frame_rate
             }
         )
         res.raise_for_status()
@@ -220,7 +267,7 @@ class HighlightManager:
         res = await self.http.post(REPLAY_API_URL + "/recording", json={"recording": False})
         res.raise_for_status()
 
-    async def record(self, events: list[LCUHighlightEvent], numHighlights: int = None):
+    async def record(self, events: list[HighlightEvent], numHighlights: int = None):
         self.pid = await self.get_replay_pid()
 
         await self.pause()
@@ -238,7 +285,7 @@ class HighlightManager:
             end_time = timestamp + HALF_CLIP_DURATION
             await self.seek_to(timestamp)
 
-            await self.move_camera_to(event.position.x, event.position.y)
+            await self.lock_camera_to_player()
 
             await self.wait_for_seek()
 

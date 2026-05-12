@@ -82,6 +82,10 @@ class RiotAPIClient(BaseAPIClient):
         data = await self.get(f"/lol/match/v5/matches/{match_id}")
         return Match.model_validate(data)
 
+    async def get_player_match(self, match_id: str, puuid: str) -> PlayerMatch:
+        match = await self.get_match(match_id)
+        return PlayerMatch.from_match(match, puuid)
+
     async def get_match_timeline(self, match_id: str) -> MatchTimeline:
         data = await self.get(f"/lol/match/v5/matches/{match_id}/timeline")
         return MatchTimeline.model_validate(data)
