@@ -7,14 +7,14 @@ from typing import Any
 
 from league.constants import APP_NAME
 
-APP_DIR = Path(typer.get_app_dir(APP_NAME))
+APP_DIR = Path(typer.get_app_dir(APP_NAME, roaming=False))
 CONFIG_PATH = APP_DIR / "cfg.toml"
 
 DEFAULT_CONFIG = {
     "lcu": {"client_install_path": "F:/Games/Riot Games/League of Legends"},
     "govee": {"default_power_state": True, "default_brightness": 100, "request_timeout": 0.5},
     "chroma": {"teammate_dim_factor": 0.4},
-    "companion": {"default_player_name": "Dallas N Tollway"},
+    "companion": {"default_player_name": "Dallas N Tollway", "default_player_tagline": "uwu"},
 }
 
 _cache: dict | None = None

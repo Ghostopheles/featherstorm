@@ -1,1 +1,1 @@
-APP_NAME = "py-league"
+APP_NAME = "featherstorm"

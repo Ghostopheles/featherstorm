@@ -26,6 +26,7 @@ from league.models import GameEventType, GameTeam, GameEvent
 from league.riot_api import RiotAPIClient
 from league.dragon import CommunityDataDragon
 from league.enums import QueueType
+from league.highlights import HighlightManager
 
 from govee import GoveeConnectionListener, GoveeColor
 
@@ -231,7 +232,7 @@ async def amain(govee: bool):
 
 config.init()
 
-app = typer.Typer(name="League of Chroma", no_args_is_help=True)
+app = typer.Typer(name="Featherstorm", no_args_is_help=True)
 
 
 @app.command(name="companion", help="Runs the app in it's default mode, watching the current ongoing match.")
@@ -239,7 +240,7 @@ def default(govee: Optional[bool] = True):
     asyncio.run(amain(govee))
 
 
-lcu_app = typer.Typer(name="lcu", no_args_is_help=True)
+lcu_app = typer.Typer(name="lcu", no_args_is_help=True, help="League Client API commands")
 app.add_typer(lcu_app)
 
 lcu_champselect_app = typer.Typer(name="champ-select", no_args_is_help=True)
@@ -270,11 +271,11 @@ def get_lobby(client_install_path: Optional[Path] = default_client_path):
     print(asyncio.run(client.get_current_summoner()))
 
 
-lcu_cfg_app = typer.Typer(name="cfg", no_args_is_help=True)
-lcu_app.add_typer(lcu_cfg_app)
+cfg_app = typer.Typer(name="cfg", no_args_is_help=True, help="Configuration commands")
+app.add_typer(cfg_app)
 
 
-@lcu_cfg_app.command(name="view", help="View your saved config")
+@cfg_app.command(name="view", help="View your saved config")
 def view_cfg(category: Optional[str] = None):
     cfg = config.get_full_config()
     if category is not None:
@@ -285,18 +286,18 @@ def view_cfg(category: Optional[str] = None):
         print(cfg)
 
 
-@lcu_cfg_app.command(name="get", help="Get a saved config value")
+@cfg_app.command(name="get", help="Get a saved config value")
 def get_cfg_value(key: str, category: Optional[str] = None):
     value = config.get(key, category)
     print(f"{category + '.' if category else ''}{key}: {value}")
 
 
-@lcu_cfg_app.command(name="set", help="Set a saved config value")
+@cfg_app.command(name="set", help="Set a saved config value")
 def set_cfg_value(key: str, value: str, category: Optional[str] = None):
     config.set(key, value, category)
 
 
-@lcu_cfg_app.command(name="reset", help="Reset saved configuration back to defaults")
+@cfg_app.command(name="reset", help="Reset saved configuration back to defaults")
 def set_cfg_value(force: Optional[bool] = False):
     if config.init(force):
         print("Config reset.")
@@ -304,7 +305,7 @@ def set_cfg_value(force: Optional[bool] = False):
         print("Config not reset, specify the --force flag to confirm your reset.")
 
 
-riot_app = typer.Typer(name="riot", no_args_is_help=True)
+riot_app = typer.Typer(name="riot", no_args_is_help=True, help="Riot Web API commands")
 app.add_typer(riot_app)
 
 
@@ -319,8 +320,8 @@ def _riot_client() -> RiotAPIClient:
 
 @riot_app.command(name="matches", help="Show recent matches for a player.")
 def riot_matches(
-    game_name: str,
-    tag_line: str,
+    game_name: str = config.get("default_player_name", "companion"),
+    tag_line: str = config.get("default_player_tagline", "companion"),
     count: int = 5,
     match_type: Optional[QueueType] = None,
 ):
@@ -369,8 +370,25 @@ def riot_timeline(match_id: str):
 
     asyncio.run(run())
 
+highlights_app = typer.Typer(name="highlights", no_args_is_help=True, help="Highlights commands")
+app.add_typer(highlights_app)
 
-dragon_app = typer.Typer(name="dragon", no_args_is_help=True)
+@highlights_app.command(name="capture", help="Capture highlights from your last match.")
+def capture_highlights(
+    game_path: Path = Path(config.get("client_install_path", "lcu")),
+    highlights_path: Path = Path(config.get("highlights_path", "highlights")),
+    name: str = config.get("default_player_name", "companion"),
+    tagline: str = config.get("default_player_tagline", "companion"),
+):
+    api_key = os.getenv("RIOT_API_KEY")
+    async def run():
+        highlights = await HighlightManager.create(name, tagline, game_path, highlights_path, api_key)
+        last_match_id = await highlights.get_last_match_id()
+        await highlights.capture_highlights_for_match(last_match_id)
+
+    asyncio.run(run())
+
+dragon_app = typer.Typer(name="dragon", no_args_is_help=True, help="rawr")
 app.add_typer(dragon_app)
 
 
