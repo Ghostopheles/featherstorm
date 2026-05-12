@@ -66,6 +66,9 @@ def get(key: str, category: str | None = None) -> Any:
     cfg = _load()
     return cfg[category][key] if category else cfg[key]
 
+def get_category(category: str) -> Any:
+    cfg = _load()
+    return cfg.get(category)
 
 def set(key: str, value: Any, category: str | None = None) -> None:
     cfg = _load()

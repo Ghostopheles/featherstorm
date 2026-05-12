@@ -25,20 +25,9 @@ LAME_EVENTS = ["CHAMPION_KILL", "ELITE_MONSTER_KILL", "BUILDING_KILL", "TURRET_P
 async def amain():
     api_key = os.getenv("RIOT_API_KEY")
     highlights = await HighlightManager.create(NAME, TAGLINE, GAME_INSTALL_PATH, HIGHLIGHTS_PATH, api_key)
-    match = await highlights.get_last_match()
-    matchID = await highlights.get_last_match_id()
-
-    await highlights.capture_highlights_for_match(matchID, numHighlights=5)
-
-    timeline = await highlights.get_timeline_for_match(matchID)
-
-    participantID = highlights.get_player_participant_id(match)
-
-    analyzer = MatchTimelineAnalyzer(participantID, timeline)
-    highlights = analyzer.get_highlight_events()
-    for batch in highlights:
-        for event in batch.events:
-            print(event)
+    #matchID = await highlights.get_last_match_id()
+    #await highlights.capture_highlights_for_match(matchID, numHighlights=1)
+    highlights.test()
 
 
 

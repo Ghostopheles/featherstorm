@@ -5,7 +5,6 @@ import asyncio
 
 from dotenv import load_dotenv
 
-from rich import print
 from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass
@@ -27,6 +26,7 @@ from league.riot_api import RiotAPIClient
 from league.dragon import CommunityDataDragon
 from league.enums import QueueType
 from league.highlights import HighlightManager
+from league.console import print
 
 from govee import GoveeConnectionListener, GoveeColor
 
@@ -230,6 +230,7 @@ async def amain(govee: bool):
 
 # --------------------------------------- CLI SETUP BELOW THIS LINE ---------------------------------------
 
+
 config.init()
 
 app = typer.Typer(name="Featherstorm", no_args_is_help=True)
@@ -381,13 +382,15 @@ def capture_highlights(
     highlights_path: Path = Path(config.get("highlights_path", "highlights")),
     name: str = config.get("default_player_name", "companion"),
     tagline: str = config.get("default_player_tagline", "companion"),
+    count: int = None
 ):
+    load_dotenv()
     api_key = os.getenv("RIOT_API_KEY")
 
     async def run():
         highlights = await HighlightManager.create(name, tagline, game_path, highlights_path, api_key)
         last_match_id = await highlights.get_last_match_id()
-        await highlights.capture_highlights_for_match(last_match_id)
+        await highlights.capture_highlights_for_match(last_match_id, numHighlights=count)
 
     asyncio.run(run())
 

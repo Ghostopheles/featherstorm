@@ -1,33 +1,38 @@
 import os
-import signal
 import httpx
+import signal
 import asyncio
 
 from pathlib import Path
-from rich import print as p
+
+import league.config as cfg
 
 from league.lcu.lcu import LCUClient
 from league.models import PlayerMatch, TimelineEvent, MatchTimeline
-from league.enums import QueueType, ReplaySequenceEasing
+from league.enums import QueueType
 from league.timeline import MatchTimelineAnalyzer, HighlightEvent
 from league.riot_api import RiotAPIClient
+from league.console import console
 
 LAUNCH_POLL_INTERVAL = 1
 LAUNCH_TIMEOUT = 60
-DOWNLOAD_CHUNK_SIZE = 8192
 CLIP_DURATION = 15  # seconds
-HALF_CLIP_DURATION = CLIP_DURATION // 2
 GAME_CLIENT_NAME = "League of Legends.exe"
 DEFAULT_SEEK_BUFFER = 0  # seconds to seek before the event timestamp to account for loading times
 DEFAULT_CAMERA_FOV = 60
 
-SEQUENCE_CAMERA_HEIGHT = 2200
-SEQUENCE_CAMERA_PITCH = 55
+REALITY_CHECK_BUFFER = 5
+
+LEAD_BUFFER = 7 # seconds
+TRAIL_BUFFER = 7 # seconds
 
 CAMERA_SELECTION_OFFSET = {"x": 0, "y": 2200, "z": -1400}
 
 REPLAY_API_URL = "https://127.0.0.1:2999/replay"
 
+def print(*args, **kwargs):
+    prefix = rf"[highlights]\[{__name__}][/]:"
+    console.print(prefix, *args, **kwargs)
 
 class HighlightManager:
     game_path: Path
@@ -39,6 +44,8 @@ class HighlightManager:
     puuid: str | None = None
 
     http: httpx.AsyncClient | None = None
+
+    cfg: dict | None = None
 
     __matches: list[PlayerMatch] | None = None
     __match_cache: dict[str, PlayerMatch] | None = None
@@ -83,10 +90,17 @@ class HighlightManager:
 
         self.lcu = LCUClient(self.game_path.parent.parent)
 
+    def __init_cfg(self):
+        if self.cfg is not None:
+            return
+
+        self.cfg = cfg.get_category("highlights")
+
     async def __init(self, *args, **kwargs):
         await self.__init_api(*args, **kwargs)
         self.__init_http()
         self.__init_lcu()
+        self.__init_cfg()
 
     @classmethod
     async def create(cls, name: str, tag: str, game_path: Path, cache_path: Path, api_key: str):
@@ -149,6 +163,8 @@ class HighlightManager:
         return analyzer.get_all_events()
 
     async def capture_highlights_for_match(self, matchID: str, numHighlights: int = None):
+        print(f"Capturing {numHighlights} highlight(s) for match [bold blue]{matchID}[/]")
+
         events = await self.get_highlight_events(matchID)
         events.sort(key=lambda x: x.timestamp)  # sort by the start time
 
@@ -309,67 +325,81 @@ class HighlightManager:
         self.pid = await self.get_replay_pid()
 
         await self.pause()
-        print("waiting for replay to catch up with reality...")
-        await asyncio.sleep(5)
+        await asyncio.sleep(REALITY_CHECK_BUFFER)
 
         await self.hide_replay_ui()
 
-        print("--capturing highlights--")
+        raw_highlight_paths = []
+
         for i, batch in enumerate(events):
             if numHighlights is not None and i >= numHighlights:
                 break
 
+            idx = i + 1
+            print(f"Capturing highlight [bold blue]{idx}[/]...")
+
             timestamp = batch.timestamp
 
-            start_time = max(0, timestamp - 4)
+            start_time = max(0, timestamp - LEAD_BUFFER)
             length = batch.event_length
-            end_time = timestamp + length + 4
+            end_time = timestamp + length + TRAIL_BUFFER
             await self.seek_to(timestamp)
 
             await self.wait_for_seek()
 
             await self.track_player_with_camera()
 
-            print("resuming replay...")
             await self.resume()
 
             matchID = self.__current_match.matchId
-            file_name = f"{matchID}_{i}.webm"
-            file_path = (self.cache_path / file_name).resolve()
-            print(f"recording highlight {i}...")
+            file_name = f"highlight_{idx}.webm"
+
+            file_dir = (self.cache_path / matchID)
+            file_dir.mkdir(parents=True, exist_ok=True)
+
+            file_path = (file_dir / file_name).resolve()
             await self.start_recording(file_path.as_posix(), start_time, end_time)
 
-            print(f"waiting for recording...")
             await self.wait_for_recording()
-            print(f"captured highlight {i}!")
+            print(f"Captured highlight [bold blue]{idx}[/]!")
 
-            print("compressing highlight...")
-            await self.compress_highlight(file_path)
+            raw_highlight_paths.append(file_path)
 
-            await self.pause()
-
-        print("done!")
+        print(f"Done capturing highlights - exiting in {REALITY_CHECK_BUFFER} seconds...")
+        await asyncio.sleep(REALITY_CHECK_BUFFER)
         await self.close_active_replay()
+
+        print(f"Converting & compressing {len(raw_highlight_paths)} highlights...")
+        await self.compress_many_highlights(raw_highlight_paths)
 
         return True
 
+    async def compress_many_highlights(self, paths: list[Path]):
+        tasks = [self.compress_highlight(path) for path in paths]
+        await asyncio.gather(*tasks)
+
     async def compress_highlight(self, file_path: Path) -> Path:
         dest = file_path.with_suffix(".mp4")
-        proc = await asyncio.create_subprocess_exec(
-            "ffmpeg",
-            "-i",
-            file_path.as_posix(),
-            "-c:v",
-            "av1_nvenc",
-            "-cq",
-            "35",
-            "-preset",
-            "p4",
-            "-r",
-            "60",
-            "-c:a",
-            "aac",
+
+        if dest.exists():
+            dest.unlink()
+
+        cmd = [
+            "ffmpeg", "-i", file_path.as_posix(),
+            "-c:v", "av1_nvenc",
+            "-cq", self.cfg.get("export_constant_quality"),
+            "-preset", f"p{self.cfg.get("export_preset")}",
+            "-r", self.cfg.get("export_fps"),
+            "-multipass", self.cfg.get("export_multipass"),
+            "-spatial-aq", "1",
+            "-temporal-aq", "1",
+            "-b:a", self.cfg.get("export_audio_quality"),
+            "-rc-lookahead", "32",
             dest.as_posix(),
+        ]
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -377,4 +407,9 @@ class HighlightManager:
         if proc.returncode != 0:
             raise RuntimeError(f"ffmpeg failed: {stderr.decode()}")
         file_path.unlink()
+
+        print(f"Highlight saved to [bold blue]{dest.as_posix()}[/]")
         return dest
+
+    def test(self):
+        print("The quick brown fox jumps over the lazy dog.")
