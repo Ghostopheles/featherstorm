@@ -20,6 +20,9 @@ GAME_CLIENT_NAME = "League of Legends.exe"
 DEFAULT_SEEK_BUFFER = 0 # seconds to seek before the event timestamp to account for loading times
 DEFAULT_CAMERA_FOV = 60
 
+SEQUENCE_CAMERA_HEIGHT = 2200
+SEQUENCE_CAMERA_PITCH = 56
+
 REPLAY_API_URL = "https://127.0.0.1:2999/replay"
 
 
@@ -229,26 +232,6 @@ class HighlightManager:
         res.raise_for_status()
         return res.json()
 
-    async def attach_camera_to_player(self):
-        if self.__current_match is None:
-            return
-
-        camera_json = {
-            "cameraMode": "tps",
-            "cameraAttached": True,
-            "selectionName": self.__current_match.player.championName,
-            "selectionOffset": {
-                "x": 0,
-                "y": 600,
-                "z": -500
-            },
-            "fieldOfView": 60
-        }
-
-        res = await self.http.post(REPLAY_API_URL + "/render", json=camera_json)
-        res.raise_for_status()
-        return res.json()
-
     async def start_recording(
             self,
             file_name: str,
@@ -286,17 +269,21 @@ class HighlightManager:
     def generate_camera_sequence(self, positions: list[PositionKeyframe]) -> dict:
         start_timestamp = positions[0].timestamp
         data = {
-            "cameraMode": [
-                {
+            "cameraPosition": [],
+            "cameraRotation": [
+                    {
                     "blend": ReplaySequenceEasing.LINEAR,
                     "time": start_timestamp,
-                    "value": "top"
-                },
+                    "value": {
+                        "x": 0,
+                        "y": SEQUENCE_CAMERA_PITCH,
+                        "z": 0
+                    }
+                }
             ],
-            "cameraPosition": [],
             "fieldOfView": [
                 {
-                    "blend": ReplaySequenceEasing.QUADRATIC_EASE_OUT,
+                    "blend": ReplaySequenceEasing.SMOOTH_STEP,
                     "time": start_timestamp + 2,
                     "value": 60
                 },
@@ -306,12 +293,12 @@ class HighlightManager:
         for keyframe in positions:
             pos = keyframe.position
             frame = {
-                "blend": ReplaySequenceEasing.SMOOTH_STEP,
+                "blend": ReplaySequenceEasing.SMOOTHER_STEP,
                 "time": keyframe.timestamp,
                 "value": {
                     "x": pos.x,
                     "y": pos.y,
-                    "z": 4500
+                    "z": SEQUENCE_CAMERA_HEIGHT
                 }
             }
             data["cameraPosition"].append(frame)
@@ -338,10 +325,13 @@ class HighlightManager:
 
             await self.wait_for_seek()
 
-            await self.attach_camera_to_player()
-            #sequence = self.generate_camera_sequence(batch.positions)
-            #await self.apply_sequence(sequence)
+            print("applying camera sequence")
+            sequence = self.generate_camera_sequence(batch.positions)
+            await self.apply_sequence(sequence)
 
+            await asyncio.sleep(2)
+
+            print("resuming replay...")
             await self.resume()
 
             file_name = f"highlight_{i}.webm"

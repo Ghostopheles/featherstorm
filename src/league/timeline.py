@@ -33,6 +33,7 @@ def event_victim_is_participant(targetParticipantID: int, obj: TimelineEvent, **
 
 BATCH_WINDOW_MS = 15_000
 DEFAULT_CLIP_WINDOW_MS = 15_000
+MAX_KEYFRAME_JUMP = 5000  # units; drops clip endpoints where participant-frame interpolation is unreliable
 
 
 class ParticipantPositionTrack:
@@ -86,9 +87,8 @@ class MatchTimelineAnalyzer:
     def __init_rules(self):
         self.HIGHLIGHT_RULES = {  # using OR logic
             event_type_is("CHAMPION_KILL") & event_caused_by_participant(self.targetParticipantID),
-            event_type_is("ELITE_MONSTER_KILL") & (
-                event_caused_by_participant(self.targetParticipantID) | event_assisted_by_participant(self.targetParticipantID)
-            ),
+            event_type_is("ELITE_MONSTER_KILL")
+            & (event_caused_by_participant(self.targetParticipantID) | event_assisted_by_participant(self.targetParticipantID)),
         }
 
     def __is_event_relevant(self, event: TimelineEvent) -> bool:
@@ -161,6 +161,11 @@ class MatchTimelineAnalyzer:
                 continue
             if keyframes and keyframes[-1].position.x == pos.x and keyframes[-1].position.y == pos.y:
                 continue
+            if keyframes:
+                prev = keyframes[-1].position
+                dist = ((pos.x - prev.x) ** 2 + (pos.y - prev.y) ** 2) ** 0.5
+                if dist > MAX_KEYFRAME_JUMP:
+                    continue
             keyframes.append(PositionKeyframe(timestamp=ts_ms, position=pos))
         return keyframes
 
@@ -192,4 +197,4 @@ class HighlightEvent:
         """Span in seconds from first to last event in the batch. 0 for single-event highlights."""
         if len(self.events) <= 1:
             return 0
-        return (self.events[-1].timestamp - self.events[0].timestamp)
+        return self.events[-1].timestamp - self.events[0].timestamp
