@@ -18,17 +18,13 @@ DOWNLOAD_CHUNK_SIZE = 8192
 CLIP_DURATION = 15  # seconds
 HALF_CLIP_DURATION = CLIP_DURATION // 2
 GAME_CLIENT_NAME = "League of Legends.exe"
-DEFAULT_SEEK_BUFFER = 0 # seconds to seek before the event timestamp to account for loading times
+DEFAULT_SEEK_BUFFER = 0  # seconds to seek before the event timestamp to account for loading times
 DEFAULT_CAMERA_FOV = 60
 
 SEQUENCE_CAMERA_HEIGHT = 2200
 SEQUENCE_CAMERA_PITCH = 55
 
-CAMERA_SELECTION_OFFSET = {
-    "x": 0,
-    "y": 2200,
-    "z": -1400
-}
+CAMERA_SELECTION_OFFSET = {"x": 0, "y": 2200, "z": -1400}
 
 REPLAY_API_URL = "https://127.0.0.1:2999/replay"
 
@@ -114,9 +110,7 @@ class HighlightManager:
         if self.__matches is None:
             self.__matches = await self.riot.get_recent_matches(self.puuid, count=count, match_type=QueueType.Normal)
 
-            self.__match_cache = {
-                match.matchId: match for match in self.__matches
-            }
+            self.__match_cache = {match.matchId: match for match in self.__matches}
 
         return self.__matches
 
@@ -156,7 +150,7 @@ class HighlightManager:
 
     async def capture_highlights_for_match(self, matchID: str, numHighlights: int = None):
         events = await self.get_highlight_events(matchID)
-        events.sort(key=lambda x: x.timestamp) # sort by the start time
+        events.sort(key=lambda x: x.timestamp)  # sort by the start time
 
         match = await self.get_match(matchID)
         self.__current_match = match
@@ -181,22 +175,25 @@ class HighlightManager:
         async def check():
             res = await self.http.get(REPLAY_API_URL + "/playback")
             return res.is_success
+
         return await self.wait_for(check)
 
     async def wait_for_seek(self):
         async def check():
             res = await self.http.get(REPLAY_API_URL + "/playback")
             return res.json().get("seeking") == False
+
         return await self.wait_for(check)
 
     async def wait_for_recording(self):
         async def check():
             res = await self.http.get(REPLAY_API_URL + "/recording")
             return res.json().get("recording") == False
+
         return await self.wait_for(check)
 
     async def open_replay(self, matchID: str):
-        matchID = matchID.replace("NA1_", "") # need to remove prefix since the LCU doesn't use them
+        matchID = matchID.replace("NA1_", "")  # need to remove prefix since the LCU doesn't use them
         await self.lcu.launch_replay(matchID)
 
     async def close_active_replay(self):
@@ -227,30 +224,30 @@ class HighlightManager:
         res.raise_for_status()
         return res.json()
 
-    async def update_render_settings    (self, **kwargs):
+    async def update_render_settings(self, **kwargs):
         res = await self.http.post(REPLAY_API_URL + "/render", json=kwargs)
         res.raise_for_status()
         return res.json()
 
     async def move_camera_to(self, x: float, y: float, fov: int = DEFAULT_CAMERA_FOV):
-        res = await self.http.post(REPLAY_API_URL + "/render", json={
-            "cameraPosition": {
-                "x": x,
-                "y": y,
+        res = await self.http.post(
+            REPLAY_API_URL + "/render",
+            json={
+                "cameraPosition": {
+                    "x": x,
+                    "y": y,
+                },
+                "fieldOfView": fov,
             },
-            "fieldOfView": fov,
-        })
+        )
         res.raise_for_status()
         return res.json()
 
     async def track_player_with_camera(self):
         name = self.__current_match.player.riotIdGameName
-        res = await self.http.post(REPLAY_API_URL + "/render", json={
-            "cameraMode": "fps",
-            "cameraAttached": True,
-            "selectionName": name,
-            "selectionOffset": CAMERA_SELECTION_OFFSET
-        })
+        res = await self.http.post(
+            REPLAY_API_URL + "/render", json={"cameraMode": "fps", "cameraAttached": True, "selectionName": name, "selectionOffset": CAMERA_SELECTION_OFFSET}
+        )
         res.raise_for_status()
         return res.json()
 
@@ -275,17 +272,17 @@ class HighlightManager:
         return res.json()
 
     async def start_recording(
-            self,
-            file_path: str,
-            start_time: float,
-            end_time: float,
-            width: int = 2560,
-            height: int = 1440,
-            fps: int = 60,
-            lossless: bool = True,
-            codec: str = "webm",
-            enforce_frame_rate: bool = False
-        ):
+        self,
+        file_path: str,
+        start_time: float,
+        end_time: float,
+        width: int = 2560,
+        height: int = 1440,
+        fps: int = 60,
+        lossless: bool = True,
+        codec: str = "webm",
+        enforce_frame_rate: bool = False,
+    ):
         res = await self.http.post(
             REPLAY_API_URL + "/recording",
             json={
@@ -298,8 +295,8 @@ class HighlightManager:
                 "startTime": start_time,
                 "endTime": end_time,
                 "framesPerSecond": fps,
-                "enforceFrameRate": enforce_frame_rate
-            }
+                "enforceFrameRate": enforce_frame_rate,
+            },
         )
         res.raise_for_status()
         return res.json()
@@ -359,13 +356,22 @@ class HighlightManager:
     async def compress_highlight(self, file_path: Path) -> Path:
         dest = file_path.with_suffix(".mp4")
         proc = await asyncio.create_subprocess_exec(
-            "ffmpeg", "-i", file_path.as_posix(),
-            "-c:v", "av1_nvenc", "-cq", "35", "-preset", "p4",
-            "-r", "60",
-            "-c:a", "aac",
+            "ffmpeg",
+            "-i",
+            file_path.as_posix(),
+            "-c:v",
+            "av1_nvenc",
+            "-cq",
+            "35",
+            "-preset",
+            "p4",
+            "-r",
+            "60",
+            "-c:a",
+            "aac",
             dest.as_posix(),
             stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
         )
         _, stderr = await proc.communicate()
         if proc.returncode != 0:

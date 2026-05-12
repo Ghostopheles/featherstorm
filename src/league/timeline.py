@@ -33,6 +33,7 @@ def event_victim_is_participant(targetParticipantID: int, obj: TimelineEvent, **
 
 BATCH_WINDOW_MS = 20_000
 
+
 class ParticipantPositionTrack:
     """Sparse position samples for one participant, indexed by frame timestamp (ms). Linear interp between samples."""
 

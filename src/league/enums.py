@@ -37,6 +37,7 @@ class QueueType(StrEnum):
     Tournament = "tourney"
     Tutorial = "tutorial"
 
+
 class ReplaySequenceEasing(StrEnum):
     LINEAR = "linear"
     SNAP = "snap"

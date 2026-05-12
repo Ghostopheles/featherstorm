@@ -370,8 +370,10 @@ def riot_timeline(match_id: str):
 
     asyncio.run(run())
 
+
 highlights_app = typer.Typer(name="highlights", no_args_is_help=True, help="Highlights commands")
 app.add_typer(highlights_app)
+
 
 @highlights_app.command(name="capture", help="Capture highlights from your last match.")
 def capture_highlights(
@@ -381,12 +383,14 @@ def capture_highlights(
     tagline: str = config.get("default_player_tagline", "companion"),
 ):
     api_key = os.getenv("RIOT_API_KEY")
+
     async def run():
         highlights = await HighlightManager.create(name, tagline, game_path, highlights_path, api_key)
         last_match_id = await highlights.get_last_match_id()
         await highlights.capture_highlights_for_match(last_match_id)
 
     asyncio.run(run())
+
 
 dragon_app = typer.Typer(name="dragon", no_args_is_help=True, help="rawr")
 app.add_typer(dragon_app)
