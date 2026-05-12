@@ -6,8 +6,8 @@ import asyncio
 from pathlib import Path
 
 from league.lcu.lcu import LCUClient
-from league.lcu.models import LCUTimelineEvent
-from league.lcu.timeline import LCUTimelineAnalyzer, LCUHighlightEvent
+from league.lcu.models import LCUTimelineEvent, LCUMatch
+from league.lcu.timeline import LCUTimelineAnalyzer, LCUHighlightEvent, LCUTimeline
 from league.riot_api import RiotAPIClient
 
 LAUNCH_POLL_INTERVAL = 1
@@ -16,7 +16,8 @@ DOWNLOAD_CHUNK_SIZE = 8192
 CLIP_DURATION = 15  # seconds
 HALF_CLIP_DURATION = CLIP_DURATION // 2
 GAME_CLIENT_NAME = "League of Legends.exe"
-DEFAULT_SEEK_BUFFER = 2.5 # seconds to seek before the event timestamp to account for loading times
+DEFAULT_SEEK_BUFFER = 0 # seconds to seek before the event timestamp to account for loading times
+DEFAULT_CAMERA_FOV = 60
 
 REPLAY_API_URL = "https://127.0.0.1:2999/replay"
 
@@ -80,38 +81,46 @@ class HighlightManager:
         await obj.__init(name, tag, api_key)
         return obj
 
+    async def get_last_match(self) -> LCUMatch:
+        return await self.lcu.get_last_match()
+
+    async def get_last_match_id(self) -> int:
+        return await self.lcu.get_last_match_id()
+
+    async def get_timeline_for_match(self, matchID: int) -> LCUTimeline:
+        timeline = await self.lcu.get_match_timeline(matchID)
+        return timeline
+
     async def get_highlight_events_for_last_match(self) -> list[LCUHighlightEvent]:
-        matchID = await self.lcu.get_last_match_id()
+        matchID = await self.get_last_match_id()
         return await self.get_highlight_events(matchID)
 
     async def get_highlight_events(self, matchID: int) -> list[LCUHighlightEvent]:
-        timeline = await self.lcu.get_match_timeline(matchID)
+        timeline = await self.get_timeline_for_match(matchID)
         playerParticipantID = await self.lcu.get_player_participant_id(matchID)
         analyzer = LCUTimelineAnalyzer(playerParticipantID, timeline)
         return analyzer.get_highlight_events()
 
     async def get_all_events_for_last_match(self) -> list[LCUTimelineEvent]:
-        matchID = await self.lcu.get_last_match_id()
+        matchID = await self.get_last_match_id()
         return await self.get_all_events_for_match(matchID)
 
     async def get_all_events_for_match(self, matchID: int) -> list[LCUTimelineEvent]:
-        timeline = await self.lcu.get_match_timeline(matchID)
+        timeline = await self.get_timeline_for_match(matchID)
         playerParticipantID = await self.lcu.get_player_participant_id(matchID)
         analyzer = LCUTimelineAnalyzer(playerParticipantID, timeline)
         return analyzer.get_all_events()
 
     async def capture_highlights_for_match(self, matchID: int, numHighlights: int = None):
         events = await self.get_highlight_events(matchID)
-
-        timestamps = [event.timestamp for event in events]
-        timestamps.sort() # sort by the start time
+        events.sort(key=lambda x: x.timestamp) # sort by the start time
 
         await self.open_replay(matchID)
         await self.wait_for_replay_ready()
-        await self.record(timestamps, numHighlights)
+        await self.record(events, numHighlights)
 
     async def capture_highlights_for_last_match(self, numHighlights: int = None):
-        matchID = await self.lcu.get_last_match_id()
+        matchID = await self.get_last_match_id()
         return await self.capture_highlights_for_match(matchID, numHighlights)
 
     async def wait_for_replay_ready(self):
@@ -126,6 +135,19 @@ class HighlightManager:
                 pass
             await asyncio.sleep(LAUNCH_POLL_INTERVAL)
         raise TimeoutError("Replay API startup timeout")
+
+    async def wait_for_seek(self):
+        deadline = asyncio.get_event_loop().time() + LAUNCH_TIMEOUT
+        while asyncio.get_event_loop().time() < deadline:
+            try:
+                res = await self.http.get(REPLAY_API_URL + "/playback")
+                if res.json().get("seeking") == False:
+                    return
+            except httpx.ConnectError:
+                print("Failed to connect to replay API")
+                pass
+            await asyncio.sleep(LAUNCH_POLL_INTERVAL)
+        raise TimeoutError("Timeout waiting for seek")
 
     async def open_replay(self, matchID: int):
         await self.lcu.launch_replay(matchID)
@@ -149,7 +171,18 @@ class HighlightManager:
         return res.json()
 
     async def seek_to(self, timestamp: float, buffer: float = DEFAULT_SEEK_BUFFER) -> float:
-        res = await self.http.post(REPLAY_API_URL + "/playback", json={"paused": False, "seeking": True, "speed": 1.0, "time": timestamp - buffer})
+        res = await self.http.post(REPLAY_API_URL + "/playback", json={"paused": True, "seeking": True, "speed": 1.0, "time": timestamp - buffer})
+        res.raise_for_status()
+        return res.json()
+
+    async def move_camera_to(self, x: float, y: float, fov: int = DEFAULT_CAMERA_FOV):
+        res = await self.http.post(REPLAY_API_URL + "/render", json={
+            "cameraPosition": {
+                "x": x,
+                "y": y,
+            },
+            "fieldOfView": fov,
+        })
         res.raise_for_status()
         return res.json()
 
@@ -163,6 +196,7 @@ class HighlightManager:
             fps: int = 60,
             lossless: bool = True,
             codec: str = "webm",
+            encforce_frame_rate: bool = True
         ):
         res = await self.http.post(
             REPLAY_API_URL + "/recording",
@@ -176,6 +210,7 @@ class HighlightManager:
                 "startTime": start_time,
                 "endTime": end_time,
                 "framesPerSecond": fps,
+                "enforceFrameRate": encforce_frame_rate
             }
         )
         res.raise_for_status()
@@ -185,7 +220,7 @@ class HighlightManager:
         res = await self.http.post(REPLAY_API_URL + "/recording", json={"recording": False})
         res.raise_for_status()
 
-    async def record(self, timestamps: list[float], numHighlights: int = None):
+    async def record(self, events: list[LCUHighlightEvent], numHighlights: int = None):
         self.pid = await self.get_replay_pid()
 
         await self.pause()
@@ -193,23 +228,28 @@ class HighlightManager:
         await asyncio.sleep(5)
 
         print("--capturing highlights--")
-        for i, timestamp in enumerate(timestamps):
+        for i, event in enumerate(events):
             if numHighlights is not None and i >= numHighlights:
                 break
+
+            timestamp = event.timestamp
 
             start_time = max(0, timestamp - HALF_CLIP_DURATION)
             end_time = timestamp + HALF_CLIP_DURATION
             await self.seek_to(timestamp)
 
-            await asyncio.sleep(1)
+            await self.move_camera_to(event.position.x, event.position.y)
+
+            await self.wait_for_seek()
+
+            await self.resume()
 
             file_name = f"highlight_{i}.webm"
-            rec = await self.start_recording(file_name, start_time, end_time)
-            current_time = rec.get("currentTime")
+            await self.start_recording(file_name, start_time, end_time)
 
             print(f"recording highlight {i}...")
 
-            time_to_wait = (end_time - current_time) + 5
+            time_to_wait = CLIP_DURATION + 5
             print(f"sleeping for {time_to_wait} seconds to capture the full highlight...")
             await asyncio.sleep(time_to_wait)
 
