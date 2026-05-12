@@ -15,7 +15,7 @@ GAME_INSTALL_PATH = Path("F:/Games/Riot Games/League of Legends")
 CACHE_PATH = Path("./data")
 HIGHLIGHTS_PATH = CACHE_PATH / "highlights"
 
-MATCH_ID = "NA1_5549872684"
+MATCH_ID = "NA1_5549854658"
 
 NAME = "Dallas N Tollway"
 TAGLINE = "uwu"
@@ -24,7 +24,7 @@ TAGLINE = "uwu"
 async def amain():
     api_key = os.getenv("RIOT_API_KEY")
     highlights = await HighlightManager.create(NAME, TAGLINE, GAME_INSTALL_PATH, HIGHLIGHTS_PATH, api_key)
-    await highlights.capture_highlights_for_match(MATCH_ID, numHighlights=5)
+    await highlights.capture_highlights_for_match(MATCH_ID, numHighlights=20)
 
 
 if __name__ == "__main__":

@@ -181,10 +181,6 @@ class LCUClient(BaseAPIClient):
         res = await self.get(f"/lol-match-history/v1/game-timelines/{matchID}")
         return LCUTimeline(**res)
 
-    async def get_raw_match_timeline(self, matchID: int) -> dict:
-        res = await self.get(f"/lol-match-history/v1/game-timelines/{matchID}")
-        return res
-
     async def get_player_participant_id(self, matchID: int) -> int:
         game = await self.get_match(matchID)
         return game.participantIdentities[0].participantId
