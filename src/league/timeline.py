@@ -31,10 +31,7 @@ def event_victim_is_participant(targetParticipantID: int, obj: TimelineEvent, **
     return obj.victimId == targetParticipantID
 
 
-BATCH_WINDOW_MS = 15_000
-DEFAULT_CLIP_WINDOW_MS = 15_000
-MAX_KEYFRAME_JUMP = 5000  # units; drops clip endpoints where participant-frame interpolation is unreliable
-
+BATCH_WINDOW_MS = 20_000
 
 class ParticipantPositionTrack:
     """Sparse position samples for one participant, indexed by frame timestamp (ms). Linear interp between samples."""
@@ -114,7 +111,7 @@ class MatchTimelineAnalyzer:
 
         return events
 
-    def get_highlight_events(self, clip_window_ms: int = DEFAULT_CLIP_WINDOW_MS) -> list["HighlightEvent"]:
+    def get_highlight_events(self) -> list["HighlightEvent"]:
         relevant_events = self.__get_relevant_events()
         relevant_events.sort(key=lambda e: e.timestamp)
 
@@ -125,65 +122,21 @@ class MatchTimelineAnalyzer:
             else:
                 batches.append([event])
 
-        half_clip_ms = clip_window_ms // 2
         return [
             HighlightEvent(
                 timestamp=batch[0].timestamp,
                 events=batch,
-                positions=self.__build_keyframes(batch, half_clip_ms),
+                position=batch[0].position,
             )
             for batch in batches
         ]
-
-    def __build_keyframes(self, batch: list[TimelineEvent], half_clip_ms: int) -> list["PositionKeyframe"]:
-        """Build camera keyframes spanning [first_event - half_clip, last_event + half_clip].
-
-        Sources:
-          - Clip endpoints: interpolated target-participant position from participantFrames.
-          - Each event in batch: event.position when present, else interpolated target position.
-        Deduplicates adjacent identical positions.
-        """
-        first_ms = batch[0].timestamp
-        last_ms = batch[-1].timestamp
-        clip_start_ms = max(0, first_ms - half_clip_ms)
-        clip_end_ms = last_ms + half_clip_ms
-
-        raw: list[tuple[int, Optional[PositionDto]]] = []
-        raw.append((clip_start_ms, self.target_track.position_at(clip_start_ms)))
-        for event in batch:
-            pos = event.position if event.position is not None else self.target_track.position_at(event.timestamp)
-            raw.append((event.timestamp, pos))
-        raw.append((clip_end_ms, self.target_track.position_at(clip_end_ms)))
-
-        keyframes: list[PositionKeyframe] = []
-        for ts_ms, pos in raw:
-            if pos is None:
-                continue
-            if keyframes and keyframes[-1].position.x == pos.x and keyframes[-1].position.y == pos.y:
-                continue
-            if keyframes:
-                prev = keyframes[-1].position
-                dist = ((pos.x - prev.x) ** 2 + (pos.y - prev.y) ** 2) ** 0.5
-                if dist > MAX_KEYFRAME_JUMP:
-                    continue
-            keyframes.append(PositionKeyframe(timestamp=ts_ms, position=pos))
-        return keyframes
-
-
-@dataclass
-class PositionKeyframe:
-    timestamp: int  # absolute game seconds
-    position: PositionDto
-
-    def __post_init__(self):
-        self.timestamp = self.timestamp // 1000
 
 
 @dataclass
 class HighlightEvent:
     timestamp: int  # first event, in seconds
     events: list["TimelineEvent"]
-    positions: list[PositionKeyframe] = field(default_factory=list)
+    position: PositionDto
 
     def __post_init__(self):
         self.timestamp = self.timestamp // 1000
@@ -197,4 +150,4 @@ class HighlightEvent:
         """Span in seconds from first to last event in the batch. 0 for single-event highlights."""
         if len(self.events) <= 1:
             return 0
-        return self.events[-1].timestamp - self.events[0].timestamp
+        return (self.events[-1].timestamp // 1000) - (self.events[0].timestamp // 1000)

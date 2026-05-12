@@ -4,11 +4,12 @@ import httpx
 import asyncio
 
 from pathlib import Path
+from rich import print as p
 
 from league.lcu.lcu import LCUClient
 from league.models import PlayerMatch, TimelineEvent, MatchTimeline
 from league.enums import QueueType, ReplaySequenceEasing
-from league.timeline import MatchTimelineAnalyzer, HighlightEvent, PositionKeyframe
+from league.timeline import MatchTimelineAnalyzer, HighlightEvent
 from league.riot_api import RiotAPIClient
 
 LAUNCH_POLL_INTERVAL = 1
@@ -21,7 +22,13 @@ DEFAULT_SEEK_BUFFER = 0 # seconds to seek before the event timestamp to account 
 DEFAULT_CAMERA_FOV = 60
 
 SEQUENCE_CAMERA_HEIGHT = 2200
-SEQUENCE_CAMERA_PITCH = 56
+SEQUENCE_CAMERA_PITCH = 55
+
+CAMERA_SELECTION_OFFSET = {
+    "x": 0,
+    "y": 2200,
+    "z": -1400
+}
 
 REPLAY_API_URL = "https://127.0.0.1:2999/replay"
 
@@ -158,31 +165,35 @@ class HighlightManager:
         await self.wait_for_replay_ready()
         await self.record(events, numHighlights)
 
-    async def wait_for_replay_ready(self):
+    async def wait_for(self, func):
         deadline = asyncio.get_event_loop().time() + LAUNCH_TIMEOUT
         while asyncio.get_event_loop().time() < deadline:
             try:
-                res = await self.http.get(REPLAY_API_URL + "/playback")
-                if res.is_success:
+                if await func():
                     return
             except httpx.ConnectError:
                 print("Failed to connect to replay API")
                 pass
             await asyncio.sleep(LAUNCH_POLL_INTERVAL)
-        raise TimeoutError("Replay API startup timeout")
+        raise TimeoutError("Waiting timeout")
+
+    async def wait_for_replay_ready(self):
+        async def check():
+            res = await self.http.get(REPLAY_API_URL + "/playback")
+            return res.is_success
+        return await self.wait_for(check)
 
     async def wait_for_seek(self):
-        deadline = asyncio.get_event_loop().time() + LAUNCH_TIMEOUT
-        while asyncio.get_event_loop().time() < deadline:
-            try:
-                res = await self.http.get(REPLAY_API_URL + "/playback")
-                if res.json().get("seeking") == False:
-                    return
-            except httpx.ConnectError:
-                print("Failed to connect to replay API")
-                pass
-            await asyncio.sleep(LAUNCH_POLL_INTERVAL)
-        raise TimeoutError("Timeout waiting for seek")
+        async def check():
+            res = await self.http.get(REPLAY_API_URL + "/playback")
+            return res.json().get("seeking") == False
+        return await self.wait_for(check)
+
+    async def wait_for_recording(self):
+        async def check():
+            res = await self.http.get(REPLAY_API_URL + "/recording")
+            return res.json().get("recording") == False
+        return await self.wait_for(check)
 
     async def open_replay(self, matchID: str):
         matchID = matchID.replace("NA1_", "") # need to remove prefix since the LCU doesn't use them
@@ -232,15 +243,47 @@ class HighlightManager:
         res.raise_for_status()
         return res.json()
 
+    async def track_player_with_camera(self):
+        name = self.__current_match.player.riotIdGameName
+        res = await self.http.post(REPLAY_API_URL + "/render", json={
+            "cameraMode": "fps",
+            "cameraAttached": True,
+            "selectionName": name,
+            "selectionOffset": CAMERA_SELECTION_OFFSET
+        })
+        res.raise_for_status()
+        return res.json()
+
+    async def hide_replay_ui(self):
+        data = {
+            "interfaceAll": True,
+            "interfaceAnnounce": True,
+            "interfaceChat": False,
+            "interfaceFrames": True,
+            "interfaceKillCallouts": True,
+            "interfaceMinimap": True,
+            "interfaceNeutralTimers": False,
+            "interfaceQuests": False,
+            "interfaceReplay": False,
+            "interfaceScore": True,
+            "interfaceScoreboard": False,
+            "interfaceTarget": False,
+            "interfaceTimeline": False,
+            "depthFogEnabled": True,
+        }
+        res = await self.http.post(REPLAY_API_URL + "/render", json=data)
+        res.raise_for_status()
+        return res.json()
+
     async def start_recording(
             self,
             file_name: str,
             start_time: float,
             end_time: float,
-            width: int = 1280,
-            height: int = 720,
+            width: int = 2560,
+            height: int = 1440,
             fps: int = 60,
-            lossless: bool = True,
+            lossless: bool = False,
             codec: str = "webm",
             enforce_frame_rate: bool = False
         ):
@@ -266,51 +309,14 @@ class HighlightManager:
         res = await self.http.post(REPLAY_API_URL + "/recording", json={"recording": False})
         res.raise_for_status()
 
-    def generate_camera_sequence(self, positions: list[PositionKeyframe]) -> dict:
-        start_timestamp = positions[0].timestamp
-        data = {
-            "cameraPosition": [],
-            "cameraRotation": [
-                    {
-                    "blend": ReplaySequenceEasing.LINEAR,
-                    "time": start_timestamp,
-                    "value": {
-                        "x": 0,
-                        "y": SEQUENCE_CAMERA_PITCH,
-                        "z": 0
-                    }
-                }
-            ],
-            "fieldOfView": [
-                {
-                    "blend": ReplaySequenceEasing.SMOOTH_STEP,
-                    "time": start_timestamp + 2,
-                    "value": 60
-                },
-            ]
-        }
-
-        for keyframe in positions:
-            pos = keyframe.position
-            frame = {
-                "blend": ReplaySequenceEasing.SMOOTHER_STEP,
-                "time": keyframe.timestamp,
-                "value": {
-                    "x": pos.x,
-                    "y": pos.y,
-                    "z": SEQUENCE_CAMERA_HEIGHT
-                }
-            }
-            data["cameraPosition"].append(frame)
-
-        return data
-
     async def record(self, events: list[HighlightEvent], numHighlights: int = None):
         self.pid = await self.get_replay_pid()
 
         await self.pause()
         print("waiting for replay to catch up with reality...")
         await asyncio.sleep(5)
+
+        await self.hide_replay_ui()
 
         print("--capturing highlights--")
         for i, batch in enumerate(events):
@@ -319,17 +325,14 @@ class HighlightManager:
 
             timestamp = batch.timestamp
 
-            start_time = max(0, timestamp - HALF_CLIP_DURATION)
-            end_time = timestamp + HALF_CLIP_DURATION
+            start_time = max(0, timestamp - 4)
+            length = batch.event_length
+            end_time = timestamp + length + 4
             await self.seek_to(timestamp)
 
             await self.wait_for_seek()
 
-            print("applying camera sequence")
-            sequence = self.generate_camera_sequence(batch.positions)
-            await self.apply_sequence(sequence)
-
-            await asyncio.sleep(2)
+            await self.track_player_with_camera()
 
             print("resuming replay...")
             await self.resume()
@@ -339,11 +342,8 @@ class HighlightManager:
 
             print(f"recording highlight {i}...")
 
-            time_to_wait = CLIP_DURATION + 5
-            print(f"sleeping for {time_to_wait} seconds to capture the full highlight...")
-            await asyncio.sleep(time_to_wait)
-
-            await self.stop_recording()
+            print(f"waiting for recording...")
+            await self.wait_for_recording()
 
             print(f"captured highlight {i}!")
             await self.pause()

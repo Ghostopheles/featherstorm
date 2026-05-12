@@ -46,7 +46,7 @@ def event_victim_is_participant(targetParticipantID: int, event: TimelineEvent, 
 async def amain():
     api_key = os.getenv("RIOT_API_KEY")
     highlights = await HighlightManager.create(NAME, TAGLINE, GAME_INSTALL_PATH, CACHE_PATH, api_key)
-    await highlights.capture_highlights_for_match(MATCH_ID, numHighlights=1)
+    await highlights.capture_highlights_for_match(MATCH_ID, numHighlights=2)
 
 
 if __name__ == "__main__":
