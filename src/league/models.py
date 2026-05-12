@@ -552,6 +552,7 @@ class ParticipantFrameDto(BaseModel):
     xp: int
     minionsKilled: int
     jungleMinionsKilled: int
+    position: Optional[PositionDto] = None
 
 
 class TimelineEvent(BaseModel):

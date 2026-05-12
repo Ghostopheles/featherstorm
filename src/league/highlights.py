@@ -7,8 +7,8 @@ from pathlib import Path
 
 from league.lcu.lcu import LCUClient
 from league.models import PlayerMatch, TimelineEvent, MatchTimeline
-from league.enums import QueueType
-from league.timeline import MatchTimelineAnalyzer, HighlightEvent
+from league.enums import QueueType, ReplaySequenceEasing
+from league.timeline import MatchTimelineAnalyzer, HighlightEvent, PositionKeyframe
 from league.riot_api import RiotAPIClient
 
 LAUNCH_POLL_INTERVAL = 1
@@ -203,8 +203,18 @@ class HighlightManager:
         res.raise_for_status()
         return res.json()
 
-    async def seek_to(self, timestamp: float, buffer: float = DEFAULT_SEEK_BUFFER) -> float:
+    async def seek_to(self, timestamp: float, buffer: float = DEFAULT_SEEK_BUFFER):
         res = await self.http.post(REPLAY_API_URL + "/playback", json={"paused": True, "seeking": True, "speed": 1.0, "time": timestamp - buffer})
+        res.raise_for_status()
+        return res.json()
+
+    async def apply_sequence(self, sequence: dict):
+        res = await self.http.post(REPLAY_API_URL + "/sequence", json=sequence)
+        res.raise_for_status()
+        return res.json()
+
+    async def update_render_settings    (self, **kwargs):
+        res = await self.http.post(REPLAY_API_URL + "/render", json=kwargs)
         res.raise_for_status()
         return res.json()
 
@@ -219,14 +229,20 @@ class HighlightManager:
         res.raise_for_status()
         return res.json()
 
-    async def lock_camera_to_player(self):
+    async def attach_camera_to_player(self):
         if self.__current_match is None:
             return
 
         camera_json = {
-            "cameraMode": "focus",
+            "cameraMode": "tps",
             "cameraAttached": True,
             "selectionName": self.__current_match.player.championName,
+            "selectionOffset": {
+                "x": 0,
+                "y": 600,
+                "z": -500
+            },
+            "fieldOfView": 60
         }
 
         res = await self.http.post(REPLAY_API_URL + "/render", json=camera_json)
@@ -267,6 +283,41 @@ class HighlightManager:
         res = await self.http.post(REPLAY_API_URL + "/recording", json={"recording": False})
         res.raise_for_status()
 
+    def generate_camera_sequence(self, positions: list[PositionKeyframe]) -> dict:
+        start_timestamp = positions[0].timestamp
+        data = {
+            "cameraMode": [
+                {
+                    "blend": ReplaySequenceEasing.LINEAR,
+                    "time": start_timestamp,
+                    "value": "top"
+                },
+            ],
+            "cameraPosition": [],
+            "fieldOfView": [
+                {
+                    "blend": ReplaySequenceEasing.QUADRATIC_EASE_OUT,
+                    "time": start_timestamp + 2,
+                    "value": 60
+                },
+            ]
+        }
+
+        for keyframe in positions:
+            pos = keyframe.position
+            frame = {
+                "blend": ReplaySequenceEasing.SMOOTH_STEP,
+                "time": keyframe.timestamp,
+                "value": {
+                    "x": pos.x,
+                    "y": pos.y,
+                    "z": 4500
+                }
+            }
+            data["cameraPosition"].append(frame)
+
+        return data
+
     async def record(self, events: list[HighlightEvent], numHighlights: int = None):
         self.pid = await self.get_replay_pid()
 
@@ -275,19 +326,21 @@ class HighlightManager:
         await asyncio.sleep(5)
 
         print("--capturing highlights--")
-        for i, event in enumerate(events):
+        for i, batch in enumerate(events):
             if numHighlights is not None and i >= numHighlights:
                 break
 
-            timestamp = event.timestamp
+            timestamp = batch.timestamp
 
             start_time = max(0, timestamp - HALF_CLIP_DURATION)
             end_time = timestamp + HALF_CLIP_DURATION
             await self.seek_to(timestamp)
 
-            await self.lock_camera_to_player()
-
             await self.wait_for_seek()
+
+            await self.attach_camera_to_player()
+            #sequence = self.generate_camera_sequence(batch.positions)
+            #await self.apply_sequence(sequence)
 
             await self.resume()
 
