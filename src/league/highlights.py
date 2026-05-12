@@ -269,7 +269,6 @@ class HighlightManager:
             "interfaceScoreboard": False,
             "interfaceTarget": False,
             "interfaceTimeline": False,
-            "depthFogEnabled": True,
         }
         res = await self.http.post(REPLAY_API_URL + "/render", json=data)
         res.raise_for_status()
@@ -277,13 +276,13 @@ class HighlightManager:
 
     async def start_recording(
             self,
-            file_name: str,
+            file_path: str,
             start_time: float,
             end_time: float,
             width: int = 2560,
             height: int = 1440,
             fps: int = 60,
-            lossless: bool = False,
+            lossless: bool = True,
             codec: str = "webm",
             enforce_frame_rate: bool = False
         ):
@@ -293,7 +292,7 @@ class HighlightManager:
                 "recording": True,
                 "codec": codec,
                 "lossless": lossless,
-                "path": file_name,
+                "path": file_path,
                 "width": width,
                 "height": height,
                 "startTime": start_time,
@@ -337,18 +336,39 @@ class HighlightManager:
             print("resuming replay...")
             await self.resume()
 
-            file_name = f"highlight_{i}.webm"
-            await self.start_recording(file_name, start_time, end_time)
-
+            matchID = self.__current_match.matchId
+            file_name = f"{matchID}_{i}.webm"
+            file_path = (self.cache_path / file_name).resolve()
             print(f"recording highlight {i}...")
+            await self.start_recording(file_path.as_posix(), start_time, end_time)
 
             print(f"waiting for recording...")
             await self.wait_for_recording()
-
             print(f"captured highlight {i}!")
+
+            print("compressing highlight...")
+            await self.compress_highlight(file_path)
+
             await self.pause()
 
         print("done!")
         await self.close_active_replay()
 
         return True
+
+    async def compress_highlight(self, file_path: Path) -> Path:
+        dest = file_path.with_suffix(".mp4")
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-i", file_path.as_posix(),
+            "-c:v", "av1_nvenc", "-cq", "35", "-preset", "p4",
+            "-r", "60",
+            "-c:a", "aac",
+            dest.as_posix(),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE
+        )
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise RuntimeError(f"ffmpeg failed: {stderr.decode()}")
+        file_path.unlink()
+        return dest
