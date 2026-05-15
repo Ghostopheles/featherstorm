@@ -89,7 +89,7 @@ class LCULane(StrEnum):
 
 
 class LCUPosition(StrEnum):
-    Top = ("TOP",)
+    Top = "TOP"
     Middle = "MIDDLE"
     Jungle = "JUNGLE"
     Bottom = "BOTTOM"

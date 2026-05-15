@@ -7,10 +7,14 @@ from league.console import log_error, format_url
 class BaseAPIClient:
     client: httpx.AsyncClient
 
-    async def _make_request(self, method, *args, _return_exception: bool = False, **kwargs):
+    async def _make_request(self, method, *args, no_json: bool = False, _return_exception: bool = False, **kwargs):
         try:
             res = await self.client.request(method, *args, **kwargs)
             res.raise_for_status()
+
+            if no_json:
+                return res
+
             try:
                 return res.json()
             except json.decoder.JSONDecodeError:

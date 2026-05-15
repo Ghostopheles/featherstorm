@@ -20,6 +20,7 @@ THEME = Theme({
     "dark_rakan": DARK_RAKAN,
     "gold": GOLD,
     "featherstorm": f"bold {XAYAH}",
+    "featherstorm_bg": f"on {XAYAH}",
     "heading": f"bold {RAKAN}",
     "highlights": f"bold {RAKAN}",
     "highlights_match_id": "bold blue",
@@ -32,6 +33,7 @@ THEME = Theme({
 })
 
 console = Console(theme=THEME)
+console.set_window_title("Featherstorm")
 
 def print(*args, **kwargs):
     return console.print(*args, **kwargs)

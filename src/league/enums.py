@@ -35,6 +35,13 @@ class GameResult(Enum):
     Win = 0
     Lose = 1
 
+class GamePlayerPosition(StrEnum):
+    TOP = "Top"
+    JUNGLE = "Jungle"
+    MIDDLE = "Middle"
+    BOTTOM = "Bottom"
+    SUPPORT = "Support"
+
 
 class QueueType(StrEnum):
     Ranked = "ranked"

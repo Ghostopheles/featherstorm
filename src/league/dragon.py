@@ -2,6 +2,8 @@ import json
 import httpx
 import shutil
 
+from PIL import Image
+from io import BytesIO
 from pathlib import Path
 from typing import Optional
 
@@ -165,6 +167,13 @@ class DataDragon(BaseAPIClient):
         self.lookup = lookup
         return lookup
 
+    async def fetch_champion_lookup(self):
+        lookup = self._check_champion_lookup()
+        if lookup is None:
+            lookup = await self.get("/data/en_US/champion.json")
+            lookup = self._write_champion_lookup(lookup.get("data"))
+        return lookup
+
     def _check_champion_cache(self, championID: int) -> Optional[dict]:
         path = DRAGON_PATH / "champion" / f"{championID}.json"
         if path.exists():
@@ -220,13 +229,29 @@ class DataDragon(BaseAPIClient):
         if data:
             return data
 
-        lookup = self._check_champion_lookup()
-        if not lookup:
-            lookup = await self.get("/data/en_US/champion.json")
-            lookup = self._write_champion_lookup(lookup.get("data"))
+        lookup = await self.fetch_champion_lookup()
 
         name = lookup["by-id"][championID]
         data = await self.get(f"/data/en_US/champion/{name}.json")
         data = data.get("data").get(name)
         self._write_to_champion_cache(championID, data)
         return data
+
+    async def get_champion_name(self, championID: int) -> str:
+        lookup = await self.fetch_champion_lookup()
+        return lookup.get("by-id").get(championID)
+
+    async def get_champion_id(self, champion_name: str) -> int:
+        lookup = await self.fetch_champion_lookup()
+        return int(lookup.get("by-name").get(champion_name))
+
+    async def get_loading_screen_art_by_champion_name(self, champion_name: str, skin: int = 0):
+        old_base_url = self.client.base_url.copy_with()
+        self.client.base_url = DRAGON_URL
+        res = await self.get(f"/cdn/img/champion/loading/{champion_name}_{skin}.jpg", no_json=True)
+        self.client.base_url = old_base_url
+        return Image.open(BytesIO(res.content))
+
+    async def get_loading_screen_art_by_champion_id(self, championID: int, skin: int = 0):
+        name = await self.get_champion_id(championID)
+        return await self.get_loading_screen_art_by_champion_name(name, skin)
