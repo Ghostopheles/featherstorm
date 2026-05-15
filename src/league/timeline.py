@@ -3,7 +3,14 @@ from bisect import bisect_left
 from dataclasses import dataclass, field
 
 from league.enums import ReplaySequenceEasing
-from league.models import TimelineFrame, TimelineEvent, TimelineInfo, TimelineParticipant, MatchTimeline, PositionDto
+from league.models import (
+    TimelineFrame,
+    TimelineEvent,
+    TimelineInfo,
+    TimelineParticipant,
+    MatchTimeline,
+    PositionDto,
+)
 from league.predicates import rule, Predicate
 
 
@@ -14,31 +21,43 @@ def event_type_is(type_name: str, obj: TimelineEvent, **kwargs) -> bool:
 
 
 @rule
-def event_caused_by_participant(targetParticipantID: int, obj: TimelineEvent, **kwargs) -> bool:
+def event_caused_by_participant(
+    targetParticipantID: int, obj: TimelineEvent, **kwargs
+) -> bool:
     """Match events caused by a specific participant. Args: [1]"""
     return obj.killerId == targetParticipantID
 
 
 @rule
-def event_assisted_by_participant(targetParticipantID: int, obj: TimelineEvent, **kwargs) -> bool:
+def event_assisted_by_participant(
+    targetParticipantID: int, obj: TimelineEvent, **kwargs
+) -> bool:
     """Match events assisted by a specific participant. Args: [1]"""
-    return obj.assistingParticipantIds is not None and targetParticipantID in obj.assistingParticipantIds
+    return (
+        obj.assistingParticipantIds is not None
+        and targetParticipantID in obj.assistingParticipantIds
+    )
 
 
 @rule
-def event_victim_is_participant(targetParticipantID: int, obj: TimelineEvent, **kwargs) -> bool:
+def event_victim_is_participant(
+    targetParticipantID: int, obj: TimelineEvent, **kwargs
+) -> bool:
     """Match events where the victim is a specific participant. Args: [1]"""
     return obj.victimId == targetParticipantID
+
 
 @rule
 def event_is_kill_type(kill_type: str, obj: TimelineEvent, **kwargs) -> bool:
     """Match events with a specific killType. Args: [killType]"""
     return obj.killType == kill_type
 
+
 @rule
 def event_has_multikill_length(length: int, obj: TimelineEvent, **kwargs) -> bool:
     """Match multikill events with at least the specified killstreak length. Args: [1]"""
     return obj.multiKillLength is not None and obj.multiKillLength >= length
+
 
 BATCH_WINDOW_MS = 20_000
 
@@ -92,11 +111,12 @@ class MatchTimelineAnalyzer:
         self.__init_rules()
 
     def __init_rules(self):
-        self.HIGHLIGHT_RULES = {  # using OR logic
-            event_type_is("CHAMPION_SPECIAL_KILL") & (
-                event_caused_by_participant(self.targetParticipantID) &
-                event_is_kill_type("KILL_MULTI") &
-                event_has_multikill_length(2)
+        self.HIGHLIGHT_RULES = {
+            event_type_is("CHAMPION_SPECIAL_KILL")
+            & (
+                event_caused_by_participant(self.targetParticipantID)
+                & event_is_kill_type("KILL_MULTI")
+                & event_has_multikill_length(2)
             )
         }
 
@@ -129,7 +149,10 @@ class MatchTimelineAnalyzer:
 
         batches: list[list[TimelineEvent]] = []
         for event in relevant_events:
-            if batches and event.timestamp - batches[-1][-1].timestamp <= BATCH_WINDOW_MS:
+            if (
+                batches
+                and event.timestamp - batches[-1][-1].timestamp <= BATCH_WINDOW_MS
+            ):
                 batches[-1].append(event)
             else:
                 batches.append([event])

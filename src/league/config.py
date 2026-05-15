@@ -14,7 +14,7 @@ DEFAULT_CONFIG = {
     "lcu": {"client_install_path": "F:/Games/Riot Games/League of Legends"},
     "govee": {"default_power_state": True, "default_brightness": 100, "request_timeout": 0.5},
     "chroma": {"teammate_dim_factor": 0.4},
-    "companion": {"default_player_name": "Dallas N Tollway", "default_player_tagline": "uwu"},
+    "companion": {"default_player_name": "Dallas N Tollway", "default_player_tagline": "uwu", "govee_enabled": False},
 }
 
 _cache: dict | None = None
@@ -61,21 +61,22 @@ def init(force: bool = False) -> bool:
         _write()
     return False
 
-
-def get(key: str, category: str | None = None) -> Any:
-    cfg = _load()
-    if category:
-        cat = cfg.get(category)
-        if cat:
-            return cat.get(key)
-
-    return cfg.get(key)
-
 def get_category(category: str) -> Any:
     cfg = _load()
     return cfg.get(category)
 
-def set(key: str, value: Any, category: str | None = None) -> None:
+def get(category: str, key: str) -> Any:
+    cat = get_category(category)
+    if cat:
+        return cat.get(key)
+
+def get_or_set(category: str, key: str, default: Any = None) -> Any:
+    val = get(category, key)
+    if (val is None) and (default is not None):
+        set(category, key, default)
+    return default
+
+def set(category: str, key: str, value: Any) -> None:
     cfg = _load()
     if category:
         cfg.setdefault(category, {})[key] = value
@@ -83,10 +84,7 @@ def set(key: str, value: Any, category: str | None = None) -> None:
         cfg[key] = value
     _write()
 
-def clear(key: str, category: str | None = None) -> None:
+def clear(category: str, key: str) -> None:
     cfg = _load()
-    if category:
-        cfg.setdefault(category, {})[key] = None
-    else:
-        cfg[key] = None
+    cfg.setdefault(category, {})[key] = None
     _write()

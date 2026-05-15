@@ -24,7 +24,8 @@ THEME = Theme({
     "highlights_match_id": "bold blue",
     "warning": f"bold underline {XAYAH}",
     "eminence": f"bold {GOLD}",
-    "file": f"bold underline {GOLD}"
+    "file": f"bold underline {GOLD}",
+    "external_api": f"bold blue"
 })
 
 console = Console(theme=THEME)
@@ -46,3 +47,6 @@ def format_file_path(path: Union[Path, str]):
         path = path.as_posix()
 
     return f"[file][link=file://{path}]{path}[/link][/]"
+
+def log(*args, **kwargs):
+    return console.log(*args, **kwargs)
