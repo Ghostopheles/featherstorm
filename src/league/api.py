@@ -1,11 +1,11 @@
 import httpx
 import inspect
 
-from rich import print
 from typing import Callable, Optional
 
 from league.http import BaseAPIClient
-from league.enums import GameEventType, GameResult
+from league.console import print, log, log_error
+from league.enums import GameEventType, GameResult, LeagueClientStatus
 from league.models import ActivePlayer, AllGameData, GameEvent, GameTeam, Turret
 
 DEFAULT_RIOT_API_REGION = "na1"
@@ -25,9 +25,9 @@ def format_assists(assists):
 
 type GameEventCallback = Callable[[GameEvent], None]
 
-
 class LeagueClient(BaseAPIClient):
-    callbacks: dict[GameEventType, list[GameEventCallback]]
+    _callbacks: dict[GameEventType, list[GameEventCallback]]
+    _history: list[GameEvent]
 
     def __init__(self):
         self.client = httpx.AsyncClient(
@@ -36,8 +36,19 @@ class LeagueClient(BaseAPIClient):
             verify=False,
         )
         self.last_event_count = 0
-        self.callbacks = {}
+        self._callbacks = {}
+        self._history = []
         self.format_player: Callable[[str], str] = lambda name: name
+
+    async def get_client_status(self) -> LeagueClientStatus:
+        err = await self.get("/eventdata", _return_exception=True)
+        if isinstance(err, httpx.HTTPStatusError):
+            return LeagueClientStatus.LOADING
+        if isinstance(err, httpx.RequestError):
+            if isinstance(err, httpx.RemoteProtocolError):
+                return LeagueClientStatus.BANISHED
+            return LeagueClientStatus.DISCONNECTED
+        return LeagueClientStatus.CONNECTED
 
     async def get_all_game_data(self) -> AllGameData:
         return AllGameData(**await self.get("/allgamedata"))
@@ -62,17 +73,18 @@ class LeagueClient(BaseAPIClient):
 
     async def get_all_events(self):
         events = await self.get("/eventdata")
-        if events is not None and "Events" in events:
-            return events["Events"]
+        if events is not None:
+            return events.get("Events")
+
+    async def get_last_event(self) -> Optional[GameEvent]:
+        return self._history[-1]
 
     def reset(self):
         self.last_event_count = 0
 
-    def add_event_callback(self, eventType: GameEventType, callback: GameEventCallback):
-        if eventType not in self.callbacks:
-            self.callbacks[eventType] = []
-
-        self.callbacks[eventType].append(callback)
+    def on(self, event_type: GameEventType, callback: GameEventCallback):
+        self._callbacks.setdefault(event_type, [])
+        self._callbacks[event_type].append(callback)
 
     async def poll_events(self):
         events = await self.get_all_events()
@@ -102,19 +114,20 @@ class LeagueClient(BaseAPIClient):
         return ", assisted by: " + ", ".join(self.format_player(a) for a in assisters)
 
     async def try_fire_callbacks_for_event(self, event: GameEvent):
-        eventName = event.EventName
-        if eventName not in self.callbacks:
-            return
-
-        for callback in self.callbacks[eventName]:
-            if inspect.iscoroutinefunction(callback):
-                await callback(event)
-            else:
-                callback(event)
+        event_type = event.EventName
+        for callback in self._callbacks.get(event_type, []):
+            try:
+                if inspect.iscoroutinefunction(callback):
+                    await callback(event)
+                else:
+                    callback(event)
+            except Exception as e:
+                log_error(f"[error]Encountered an error while dispatching callbacks for event '[heading]{event.EventName}[/heading]'[/]: {str(e)}")
 
     async def on_event(self, eventRaw: dict):
         event = GameEvent(**eventRaw)
-        print(event)
+
+        self._history.append(event)
 
         match event.EventName:
             case GameEventType.GameStart:
@@ -146,8 +159,7 @@ class LeagueClient(BaseAPIClient):
             case GameEventType.GameEnd:
                 self.on_game_end(event)
             case _:
-                print(event)
-                print(f"Unhandled event: {event.EventName}")
+                log(f"[warning]Unhandled League client event[/]: '[heading]{event.EventName}[/]' >>\n{event}")
 
         await self.try_fire_callbacks_for_event(event)
 

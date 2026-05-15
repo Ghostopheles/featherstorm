@@ -1,5 +1,10 @@
 from enum import Enum, StrEnum
 
+class LeagueClientStatus(Enum):
+    DISCONNECTED = 1
+    LOADING = 2
+    CONNECTED = 3
+    BANISHED = 4
 
 class GameEventType(StrEnum):
     GameStart = "GameStart"

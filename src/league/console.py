@@ -1,8 +1,8 @@
-from pathlib import Path
-from typing import Callable, Any, Union
-
 from rich.theme import Theme
 from rich.console import Console
+
+from pathlib import Path
+from typing import Callable, Any, Union
 
 DARK_XAYAH = "#840e3e"
 XAYAH = "#b01d5d"
@@ -13,6 +13,7 @@ RAKAN = "#cba6f7"
 GOLD = "#c3a17c"
 
 THEME = Theme({
+    "log.time": f"bold {GOLD}",
     "xayah": XAYAH,
     "dark_xayah": DARK_XAYAH,
     "rakan": RAKAN,
@@ -22,20 +23,18 @@ THEME = Theme({
     "heading": f"bold {RAKAN}",
     "highlights": f"bold {RAKAN}",
     "highlights_match_id": "bold blue",
-    "warning": f"bold underline {XAYAH}",
     "eminence": f"bold {GOLD}",
     "file": f"bold underline {GOLD}",
-    "external_api": f"bold blue"
+    "url": f"bold underline {RAKAN}",
+    "external_api": f"bold blue",
+    "warning": f"bold underline red",
+    "error": f"bold red"
 })
 
 console = Console(theme=THEME)
-err_console = Console(theme=THEME, stderr=True)
 
 def print(*args, **kwargs):
     return console.print(*args, **kwargs)
-
-def print_err(*args, **kwargs):
-    return err_console.print(*args, **kwargs)
 
 def get_printer(prefix: str) -> Callable[[Any], None]:
     def _print(*args, **kwargs):
@@ -48,5 +47,13 @@ def format_file_path(path: Union[Path, str]):
 
     return f"[file][link=file://{path}]{path}[/link][/]"
 
+def format_url(url: str, display_text: str | None = None):
+    return f"[url][link={url}]{display_text or url}[/link][/]"
+
 def log(*args, **kwargs):
     return console.log(*args, **kwargs)
+
+def log_error(msg: str, show_locals: bool = True, show_traceback: bool = True):
+    if show_traceback:
+        console.print_exception(show_locals=show_locals)
+    return console.log(msg, log_locals=show_locals)

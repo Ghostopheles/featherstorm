@@ -1,4 +1,3 @@
-import httpx
 import asyncio
 
 from dataclasses import dataclass
@@ -17,6 +16,7 @@ from govee import GoveeConnectionListener, GoveeColor
 from league import config
 from league.console import log
 from league.api import LeagueClient
+from league.watcher import MatchWatcher
 from league.models import GameEventType, GameTeam, GameEvent
 
 
@@ -104,7 +104,7 @@ async def run_companion():
     govee = None
     enable_govee = config.get_or_set("companion.govee_enabled", default=False)
 
-    log("Waiting for League session...")
+    log("Starting [featherstorm]Featherstorm[/] in companion mode...")
 
     if enable_govee:
         govee = await init_govee()
@@ -121,6 +121,8 @@ async def run_companion():
         team_to_chroma_effect = {GameTeam.ORDER: effects.blue, GameTeam.CHAOS: effects.red, GameTeam.SPECTATOR: effects.white}
 
         team_to_govee_color = {GameTeam.ORDER: GoveeColor.blue(), GameTeam.CHAOS: GoveeColor.red(), GameTeam.SPECTATOR: GoveeColor.white()}
+
+        watcher = MatchWatcher(client)
 
         async def on_game_start(_: GameEvent):
             nonlocal active_player_name, active_player_team
@@ -188,27 +190,9 @@ async def run_companion():
             if player_teams.get(killer) == active_player_team:
                 asyncio.create_task(chroma.play_animation(effects.objective_flash[active_player_team], device))
 
-        client.add_event_callback(GameEventType.GameStart, on_game_start)
-        client.add_event_callback(GameEventType.ChampionKill, on_champion_kill)
-        client.add_event_callback(GameEventType.TurretKilled, on_turret_killed)
-        client.add_event_callback(GameEventType.FirstBrick, on_first_brick)
-        client.add_event_callback(GameEventType.HordeKill, on_objective_kill)
-        client.add_event_callback(GameEventType.HeraldKill, on_objective_kill)
-        client.add_event_callback(GameEventType.BaronKill, on_objective_kill)
-        client.add_event_callback(GameEventType.DragonKill, on_objective_kill)
-
-        while True:  # reconnect loop
-            log("Waiting for League client...")
-            while True:  # waiting state: check every 2s
-                try:
-                    events = await client.get_all_events()
-                    if events is not None:
-                        break
-                except httpx.ConnectError:
-                    pass
-                await asyncio.sleep(2)
-
-            log("League client connected.")
+        @watcher.on_session_start
+        async def on_session_start():
+            nonlocal active_player_name, active_player_team
             client.reset()
             active_player_name = None
             active_player_team = None
@@ -216,12 +200,19 @@ async def run_companion():
             player_champions.clear()
             client.format_player = lambda name: name
 
-            while True:  # active polling state: every 250ms
-                try:
-                    await client.poll_events()
-                except httpx.ConnectError:
-                    log("League client disconnected.")
-                    break
-                except Exception as exc:
-                    log(f"Poll error: {exc}")
-                await asyncio.sleep(0.25)
+            log("League session started")
+
+        @watcher.on_session_end
+        async def on_session_end():
+            log("League session ended.")
+
+        watcher.on(GameEventType.GameStart, on_game_start)
+        watcher.on(GameEventType.ChampionKill, on_champion_kill)
+        watcher.on(GameEventType.TurretKilled, on_turret_killed)
+        watcher.on(GameEventType.FirstBrick, on_first_brick)
+        watcher.on(GameEventType.HordeKill, on_objective_kill)
+        watcher.on(GameEventType.HeraldKill, on_objective_kill)
+        watcher.on(GameEventType.BaronKill, on_objective_kill)
+        watcher.on(GameEventType.DragonKill, on_objective_kill)
+
+        await watcher.run()
