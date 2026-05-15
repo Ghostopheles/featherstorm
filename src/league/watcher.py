@@ -5,10 +5,10 @@ from typing import Callable, Any
 from rich.progress import Progress, SpinnerColumn, TimeElapsedColumn, TextColumn, BarColumn
 
 from league import config
-from league.console import log, console, log_error
+from league.models import GameEvent
 from league.api import LeagueClient
 from league.enums import GameEventType, LeagueClientStatus
-from league.models import GameEvent
+from league.console import log, log_warning, console
 
 type SessionCallback = Callable[[], Any]
 type EventCallback = Callable[[GameEvent], Any]
@@ -117,10 +117,10 @@ class MatchWatcher:
             connected = await self._wait_for_session()
             if connected: # we've exhausted our retries, or gracefully disconnected
                 verb = f"reconnected after [highlight]{self._retries}[/highlight] attempt(s)" if self._is_reconnecting else "connected"
-                log(f"[on green]League client {verb}.[/]")
+                log(f"[green]League client {verb}.[/]")
             elif self._is_reconnecting:
                 self._is_reconnecting = False
-                log_error(f"[warning]Failed to reconnect to League client after [highlight]{self._retries}[/highlight] attempt(s)[/]")
+                log_warning(f"[warning]Failed to reconnect to League client after [highlight]{self._retries}[/highlight] attempt(s)[/]")
                 break
             else:
                 log(f"League client disconnected.")

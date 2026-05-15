@@ -53,6 +53,9 @@ def format_url(url: str, display_text: str | None = None):
 def log(*args, **kwargs):
     return console.log(*args, **kwargs)
 
+def log_warning(*args, **kwargs):
+    return console.log(*args, **kwargs, style="warning")
+
 def log_error(msg: str, show_locals: bool = True, show_traceback: bool = True):
     if show_traceback:
         console.print_exception(show_locals=show_locals)
