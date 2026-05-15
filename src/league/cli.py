@@ -1,47 +1,25 @@
 import os
-import httpx
 import typer
 import asyncio
 
-from dotenv import load_dotenv
-
 from pathlib import Path
 from typing import Optional
-from dataclasses import dataclass
+from dotenv import load_dotenv
 
-from chroma import (
-    ChromaSession,
-    ChromaEffect,
-    ChromaEffectType,
-    ChromaColor,
-    ChromaDevice,
-    ChromaAnimation,
-)
-
-from league.constants import APP_NAME
-from league.lcu import LCUClient
-from league.api import LeagueClient
-from league.companion import run_companion
 from league import config
-from league.models import GameEventType, GameTeam, GameEvent
-from league.riot_api import RiotAPIClient
-from league.dragon import CommunityDataDragon
+from league.lcu import LCUClient
 from league.enums import QueueType
+from league.constants import APP_NAME
+from league.riot_api import RiotAPIClient
+from league.companion import run_companion
+from league.dragon import CommunityDataDragon
 from league.highlights import HighlightManager
 from league.console import print, console, format_file_path
-
-from govee import GoveeConnectionListener, GoveeColor
-
-
-
-
-# --------------------------------------- CLI SETUP BELOW THIS LINE ---------------------------------------
-
 
 config.init()
 
 def try_get_cfg_or_input(category: str, key: str, prompt: str, *args, **kwargs):
-    value = config.get(category, key)
+    value = config.get(key, category)
     if value is not None:
         return value, False
 
@@ -52,13 +30,15 @@ def try_get_cfg_or_input(category: str, key: str, prompt: str, *args, **kwargs):
 
 app = typer.Typer(name=APP_NAME, no_args_is_help=True, add_completion=False)
 
+
 @app.callback()
 def app_main():
     console.rule(f"[featherstorm]{APP_NAME.title()}[/]", style="dark_xayah")
 
-@app.command(name="companion", help="Runs the app in it's default mode, watching the current ongoing match.")
-def default(govee: Optional[bool] = True):
-    asyncio.run(run_companion(govee))
+
+@app.command(name="companion", help=f"Runs Featherstorm in 'companion' mode alongside your current match.")
+def default():
+    asyncio.run(run_companion())
 
 
 lcu_app = typer.Typer(name="lcu", no_args_is_help=True, help="League Client API commands")
@@ -67,7 +47,7 @@ app.add_typer(lcu_app)
 lcu_champselect_app = typer.Typer(name="champ-select", no_args_is_help=True)
 lcu_app.add_typer(lcu_champselect_app)
 
-default_client_path = Path(config.get("client_install_path", "lcu"))
+default_client_path = Path(config.get("lcu.client_install_path"))
 
 
 @lcu_champselect_app.command(name="locked", help="Returns the ID of your currently locked-in champion")
@@ -109,19 +89,21 @@ def view_cfg(category: Optional[str] = None):
 
 @cfg_app.command(name="get", help="Get a saved config value")
 def get_cfg_value(category: str, key: str):
-    value = config.get(category, key)
+    value = config.get(key, category)
     print(f"[featherstorm]{category + '.' if category else ''}{key}[/]=[gold]{value}[/]")
 
 
 @cfg_app.command(name="set", help="Set a saved config value")
 def set_cfg_value(category: str, key: str, value: str):
-    config.set(category, key, value)
-    print(f"[featherstorm]{category + "." if category else ""}{key}[/]=[gold]{value}[/]")
+    config.set(key, value, category)
+    print(f"[featherstorm]{category + '.' if category else ''}{key}[/]=[gold]{value}[/]")
+
 
 @cfg_app.command(name="clear", help="Clear a saved config value")
 def clear_cfg_value(category: str, key: str):
-    config.clear(key, category)
-    print(f"Cleared [featherstorm]{category + "." if category else ""}{key}[/]")
+    config.delete(key, category)
+    print(f"Cleared [featherstorm]{category + '.' if category else ''}{key}[/]")
+
 
 @cfg_app.command(name="reset", help="Reset saved configuration back to defaults")
 def reset_cfg(force: Optional[bool] = False):
@@ -146,8 +128,8 @@ def _riot_client() -> RiotAPIClient:
 
 @riot_app.command(name="matches", help="Show recent matches for a player.")
 def riot_matches(
-    game_name: str = config.get("default_player_name", "companion"),
-    tag_line: str = config.get("default_player_tagline", "companion"),
+    game_name: str = config.get("companion.default_player_name"),
+    tag_line: str = config.get("companion.default_player_tagline"),
     count: int = 5,
     match_type: Optional[QueueType] = None,
 ):
@@ -205,9 +187,9 @@ app.add_typer(highlights_app)
 def capture_highlights(
     game_path: Optional[Path] = None,
     export_path: Optional[Path] = None,
-    name: Optional[str] = config.get("default_player_name", "companion"),
-    tagline: Optional[str] = config.get("default_player_tagline", "companion"),
-    count: Optional[int] = None
+    name: Optional[str] = config.get("companion.default_player_name"),
+    tagline: Optional[str] = config.get("companion.default_player_tagline"),
+    count: Optional[int] = None,
 ):
     load_dotenv()
     api_key = os.getenv("RIOT_API_KEY")
@@ -217,7 +199,7 @@ def capture_highlights(
         game_path = Path(path)
         if was_input:
             if game_path.exists() and game_path.is_dir():
-                config.set("client_install_path", game_path.as_posix(), category="lcu")
+                config.set("lcu.client_install_path", game_path.as_posix())
                 print(f"Saved client install path ({format_file_path(game_path)}) to config")
             else:
                 raise SystemError("you've given me a bungus game path")
@@ -227,7 +209,7 @@ def capture_highlights(
         export_path = Path(path)
         if was_input:
             if export_path.exists() and export_path.is_dir():
-                config.set("export_path", export_path.as_posix(), category="highlights")
+                config.set("highlights.export_path", export_path.as_posix())
                 print(f"Saved highlight export path ({format_file_path(export_path)}) to config")
             else:
                 raise SystemError("you've given me a bungus export path")

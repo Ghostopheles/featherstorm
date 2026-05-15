@@ -1,7 +1,6 @@
 import httpx
 import asyncio
 
-from pathlib import Path
 from dataclasses import dataclass
 
 from chroma import (
@@ -15,14 +14,13 @@ from chroma import (
 
 from govee import GoveeConnectionListener, GoveeColor
 
-from league.constants import APP_NAME
-from league.lcu import LCUClient
-from league.api import LeagueClient
 from league import config
+from league.console import log
+from league.api import LeagueClient
 from league.models import GameEventType, GameTeam, GameEvent
-from league.console import print, console, format_file_path, log
 
-DATA_PATH = config.get("meta", "cache_dir")
+
+DATA_PATH = config.get("meta.cache_dir")
 
 CHROMA_APP_INFO = {
     "title": "Featherstorm",
@@ -69,7 +67,7 @@ async def setup_chroma_effects(chroma: ChromaSession, device: ChromaDevice) -> E
             None: ChromaAnimation.flash_fade(color, ChromaColor.white(), steps=steps, flash_duration=flash_duration, total_fade_duration=total_fade_duration),
         }
 
-    teammate_dim_factor = config.get("chroma", "teammate_dim_factor")
+    teammate_dim_factor = config.get_float("chroma.teammate_dim_factor")
     return Effects(
         blue=await static(ChromaColor.blue()),
         red=await static(ChromaColor.red()),
@@ -82,18 +80,19 @@ async def setup_chroma_effects(chroma: ChromaSession, device: ChromaDevice) -> E
         first_brick_flash=make_flash(ChromaColor.white(), steps=5, total_fade_duration=0.5),
     )
 
+
 async def init_govee() -> GoveeConnectionListener:
     log("Setting up [external_api]govee[/]...")
     loop = asyncio.get_event_loop()
     govee_listener = GoveeConnectionListener(loop)
     govee_listener.start()
 
-    timeout = config.get("govee", "request_timeout")
+    timeout = config.get_float("govee.request_timeout")
     await asyncio.sleep(timeout)
 
     for dev in govee_listener.devices.values():
-        dev.set_power_state(config.get("govee", "default_power_state", ))
-        dev.set_brightness(config.get("govee", "default_brightness"))
+        dev.set_power_state(config.get_bool("govee.default_power_state"))
+        dev.set_brightness(config.get_int("govee.default_brightness"))
         dev.set_color_and_temperature(GoveeColor.white())
 
     return govee_listener
@@ -103,7 +102,7 @@ async def run_companion():
     client = LeagueClient()
 
     govee = None
-    enable_govee = config.get_or_set("companion", "govee_enabled", default=False)
+    enable_govee = config.get_or_set("companion.govee_enabled", default=False)
 
     log("Waiting for League session...")
 
@@ -127,7 +126,7 @@ async def run_companion():
             nonlocal active_player_name, active_player_team
 
             active = await client.get_active_player()
-            active_player_name = active.riotIdGameName if active else config.get("companion", "default_player_name")
+            active_player_name = active.riotIdGameName if active else config.get_str("companion.default_player_name")
 
             all_data = await client.get_all_game_data()
             for player in all_data.allPlayers:
