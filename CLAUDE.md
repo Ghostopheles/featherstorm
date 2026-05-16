@@ -19,15 +19,23 @@ league-of-snakes/
 ├── logs/                 # Log output directory (created at runtime)
 ├── src/league/
 │   ├── api.py            # LeagueClient (Live Client API poller)
+│   ├── companion.py      # run_companion() — async companion mode runner; Effects dataclass + Chroma setup
+│   ├── console.py        # Rich Console instance + custom theme (Xayah/Rakan/Gold), log/print helpers
 │   ├── models.py         # GameEvent, ActivePlayer, Player, AllGameData, Match, PlayerMatch, DragonItem
-│   ├── enums.py          # GameEventType, GameTeam, GameResult, QueueType
+│   ├── enums.py          # GameEventType, GameTeam, GameResult, QueueType, LeagueClientStatus, GamePlayerPosition, ReplaySequenceEasing
 │   ├── http.py           # BaseAPIClient (shared base for all API clients)
-│   ├── config.py         # TOML config (stored at OS app dir via typer.get_app_dir)
+│   ├── config.py         # TOML config (stored at OS app dir via typer.get_app_dir); ConfigSection helper
 │   ├── constants.py      # Shared constants
 │   ├── dragon.py         # CommunityDataDragon (champion/item metadata)
+│   ├── predicates.py     # Predicate[T] composable predicate system (@rule decorator, &/|/~ operators)
 │   ├── riot_api.py       # RiotAPIClient (PUUID, matches, summoner, champion mastery)
+│   ├── timeline.py       # MatchTimelineAnalyzer, HighlightEvent, ParticipantPositionTrack (Riot API match timeline → highlights)
 │   ├── highlights.py     # HighlightManager (replay download, open replay client, OBS-style recording of clip ranges)
+│   ├── watcher.py        # MatchWatcher (session lifecycle, reconnect logic, event routing)
 │   ├── cli.py            # Typer CLI app — primary entry point (featherstorm)
+│   ├── screens/
+│   │   ├── __init__.py
+│   │   └── champselect.py  # Champ select TUI screen (WIP — rich Layout/Panel, PlayerCard, Header/Footer)
 │   └── lcu/
 │       ├── lcu.py        # LCUClient (reads lockfile, champ-select, lobby creation)
 │       ├── models.py     # MyChampSelection, Summoner, LobbyGameMode, LobbyType, LCUTimeline*
@@ -53,11 +61,12 @@ league-of-snakes/
 
 Primary (CLI, recommended):
 ```bash
-uv run featherstorm companion          # with Govee (default)
-uv run featherstorm companion --no-govee
-uv run featherstorm riot matches "Name" "TAG" [--count N] [--match-type ranked|normal|tourney|tutorial]
+uv run featherstorm companion          # Govee on/off via companion.govee_enabled config
+uv run featherstorm riot matches ["Name"] ["TAG"] [--count N] [--match-type ranked|normal|tourney|tutorial]
 uv run featherstorm riot match <match_id>
 uv run featherstorm riot timeline <match_id>
+uv run featherstorm highlights capture [--game-path P] [--export-path P] [--name N] [--tagline T] [--count N]
+uv run featherstorm dragon item <item_id>
 ```
 
 Legacy (direct, always enables Govee):
@@ -76,12 +85,19 @@ Categories and keys:
 - `govee.default_power_state`, `govee.default_brightness`, `govee.request_timeout`
 - `chroma.teammate_dim_factor` (default `0.4`)
 - `companion.default_player_name` — fallback name when not in active game
+- `companion.default_player_tagline` — fallback tagline (used by riot commands as default arg)
+- `companion.govee_enabled` (default `False`) — toggle Govee integration (replaces old `--no-govee` CLI flag)
+- `companion.max_reconnect_attempts` (default `5`), `companion.wait_interval` (default `2.0`s), `companion.poll_interval` (default `0.25`s), `companion.session_timeout` (default `30.0`s)
+- `highlights.export_path` — directory for saved highlight clips (prompted on first use if unset)
+- `meta.cache_dir` — cache directory for Data Dragon and other metadata
 
 Manage via CLI:
 ```bash
-uv run featherstorm lcu cfg view
-uv run featherstorm lcu cfg set <key> <value> [--category <cat>]
-uv run featherstorm lcu cfg reset [--force]
+uv run featherstorm cfg view [category]
+uv run featherstorm cfg get <category> <key>
+uv run featherstorm cfg set <category> <key> <value>
+uv run featherstorm cfg clear <category> <key>
+uv run featherstorm cfg reset [--force]
 ```
 
 ## Architecture
@@ -92,18 +108,20 @@ uv run featherstorm lcu cfg reset [--force]
 League Live Client API (127.0.0.1:2999)
         │
         ▼
-  LeagueClient.poll_events()   ← called every 250ms
+  MatchWatcher.run()           ← session lifecycle loop (watcher.py)
         │
-        ▼
-  LeagueClient.on_event()      ← dispatches to typed handlers + registered callbacks
+        ├── _wait_for_session()   ← polls LeagueClientStatus until CONNECTED or timeout
         │
-        ├── on_game_start / on_champion_kill / on_dragon_killed / ...
-        │
-        └── try_fire_callbacks_for_event()  ← user-registered async/sync callbacks
+        └── _poll_session()       ← calls LeagueClient.poll_events() every 250ms
+                │
+                ▼
+        LeagueClient.on_event()  ← dispatches to registered callbacks (api.py)
+                │
+                ├── on_game_start / on_champion_kill / on_turret_killed / ...
                 │
                 ├── ChromaSession  (Razer Chroma SDK via chroma package)
                 │
-                └── GoveeConnectionListener  (Govee LAN UDP via govee package)
+                └── GoveeConnectionListener  (Govee LAN UDP, if govee_enabled)
 ```
 
 ### Key Classes
@@ -117,13 +135,19 @@ League Live Client API (127.0.0.1:2999)
 - **`GameEvent`** ([league/models.py](league/models.py)) — `@dataclass` with PascalCase fields matching API response keys directly (e.g. `EventName`, `KillerName`, `EventTime: float`). `__post_init__` casts `EventName` → `GameEventType`, `AcingTeam` → `GameTeam`, `Result` → `GameResult`.
 - **`ActivePlayer`** ([league/models.py](league/models.py)) — typed model for `/activeplayer` response. Key fields: `riotId`, `riotIdGameName`, `riotIdTagLine`, `summonerName`. `fullRunes` is `Optional[FullRunes]` — empty in some game modes.
 - **`Player`** ([league/models.py](league/models.py)) — model for each entry in `allPlayers`. Key fields: `riotIdGameName`, `team: GameTeam`. `runes` is `Optional[PlayerRunes]` — empty list in some game modes. `screenPositionBottom`/`screenPositionCenter` are `Optional[str]` comma-separated coordinates, spectator mode only (`FLT_MAX` sentinel when player not visible).
-- **`GameEventType`** ([league/enums.py](league/enums.py)) — `StrEnum` with exact strings from League Live Client API (e.g. `GameStart = "GameStart"`). Covers: `GameStart`, `GameEnd`, `MinionsSpawning`, `FirstBlood`, `TurretKilled`, `InhibKilled`, `DragonKill`, `HeraldKill`, `BaronKill`, `ChampionKill`, `Multikill`, `Ace`, `HordeKill`, `FirstBrick`, `AtakahnKill`.
-- **`Effects`** ([main.py](main.py)) — `@dataclass` holding Chroma effect state. Fields: `blue`, `red`, `white` (static base effect IDs), plus flash animation fields (`kill_flash`, `teammate_kill_flash`, `objective_flash`, `turret_flash`, `teammate_turret_flash`, `first_brick_flash`) — each `dict[Optional[GameTeam], ChromaAnimation]` keyed by team so animation fades back to correct base color.
+- **`GameEventType`** ([league/enums.py](src/league/enums.py)) — `StrEnum` with exact strings from League Live Client API (e.g. `GameStart = "GameStart"`). Covers: `GameStart`, `GameEnd`, `MinionsSpawning`, `FirstBlood`, `TurretKilled`, `InhibKilled`, `InhibRespawned`, `DragonKill`, `HeraldKill`, `BaronKill`, `ChampionKill`, `Multikill`, `Ace`, `HordeKill`, `FirstBrick`, `AtakahnKill`.
+- **`LeagueClientStatus`** ([league/enums.py](src/league/enums.py)) — `Enum`: `DISCONNECTED` (no API), `LOADING` (API up but no active game), `CONNECTED` (in game), `BANISHED` (connection dropped mid-session). Used by `MatchWatcher` to decide reconnect behavior.
+- **`GamePlayerPosition`** ([league/enums.py](src/league/enums.py)) — `StrEnum`: `TOP`, `JUNGLE`, `MIDDLE`, `BOTTOM`, `SUPPORT`.
+- **`ReplaySequenceEasing`** ([league/enums.py](src/league/enums.py)) — `StrEnum` with all easing types for the League replay API (linear, snap, smoothStep, quadratic/cubic/quartic/quintic/sine/circular/exponential/elastic/back/bounce ease in/out/in-out).
+- **`Effects`** ([league/companion.py](src/league/companion.py)) — `@dataclass` holding Chroma effect state. Fields: `blue`, `red`, `white` (static base effect IDs), plus flash animation fields (`kill_flash`, `teammate_kill_flash`, `objective_flash`, `turret_flash`, `teammate_turret_flash`, `first_brick_flash`) — each `dict[Optional[GameTeam], ChromaAnimation]` keyed by team so animation fades back to correct base color.
+- **`MatchWatcher`** ([league/watcher.py](src/league/watcher.py)) — wraps `LeagueClient`, manages session lifecycle (connect → poll → disconnect → reconnect). Key methods: `watcher.on(event_type, callback)`, `@watcher.on_session_start`, `@watcher.on_session_end`, `await watcher.run()`. Config keys: `companion.max_reconnect_attempts`, `companion.wait_interval`, `companion.poll_interval`, `companion.session_timeout`. Uses `LeagueClientStatus` to decide reconnect vs clean exit.
+- **`MatchTimelineAnalyzer`** ([league/timeline.py](src/league/timeline.py)) — analyzes Riot API `MatchTimeline` for highlight events using composable `Predicate` rules. `get_highlight_events()` → `list[HighlightEvent]`. `ParticipantPositionTrack` provides linear-interpolated position at any timestamp.
+- **`Predicate[T]`** ([league/predicates.py](src/league/predicates.py)) — composable boolean predicate wrapping a `T → bool` function. Supports `&`, `|`, `~` operators. `@rule` decorator registers named factories. `load_rule_from_config(path)` / `load_rule_from_dict(config)` build predicates from JSON config.
 - **`GoveeConnectionListener`** ([govee package](../govee/src/govee/govee.py)) — discovers + manages Govee smart lights over LAN UDP. `listener.devices: dict[str, GoveeDevice]` holds discovered devices by IP. Started before Chroma session; `GOVEE_REQUEST_TIMEOUT` (0.5s) awaited after start for discovery.
 
 ### Team → Effect Mapping
 
-Two lookup dicts in `amain()` map `GameTeam` → effect, avoiding if/elif chains:
+Two lookup dicts in `run_companion()` ([league/companion.py](src/league/companion.py)) map `GameTeam` → effect, avoiding if/elif chains:
 
 ```python
 team_to_chroma_effect = {
@@ -140,7 +164,7 @@ team_to_govee_color = {
 
 ### Adding a New Lighting Effect
 
-All Chroma effects created at startup via `setup_effects()` in [main.py](main.py), stored in `Effects` dataclass.
+All Chroma effects created at startup via `setup_chroma_effects()` in [league/companion.py](src/league/companion.py), stored in `Effects` dataclass.
 
 - **Static color** (base): call `static(ChromaColor.xyz())` inside `setup_effects()`, add returned ID as `str` field on `Effects`.
 - **Flash animation**: call `make_flash(ChromaColor.xyz())` — uses `ChromaAnimation.flash_fade()` to build `dict[Optional[GameTeam], ChromaAnimation]` with one animation variant per base color (ORDER/CHAOS/spectator). Add as `dict` field on `Effects`.
@@ -207,7 +231,8 @@ MATCH-V5 methods:
 - `DATA_DIR` in [league/api.py](league/api.py) hardcoded to absolute path (`X:/league-of-snakes/data`). Drive letter changes → update it.
 - `chroma` dep is local path ref (`../rzr-chroma`); both repos must be disk siblings. Source at `../rzr-chroma/src/chroma`.
 - `govee` dep is local path ref (`../govee`); must also be disk sibling. Source at `../govee/src/govee`.
-- Live Client API only available during active game. Both `main.py` and `cli.py` poll every 2s waiting for API, switch to 250ms once available — no manual restart between games.
+- Live Client API only available during active game. `MatchWatcher` polls every `companion.wait_interval` (2s default) until connected, then every `companion.poll_interval` (0.25s default). No manual restart between games.
+- Govee toggled via `companion.govee_enabled` config key (default `False`), not a CLI flag.
 - `riot-root-cert.pem` renamed to `riotgames.pem` but no longer used — `LeagueClient` uses `verify=False`.
 - Spectator mode: `/activeplayer` returns `{"error": "..."}` with HTTP 200 (not 4xx). Both `get_active_player()` and `AllGameData.__post_init__` guard against this, returning `None` for `activePlayer`.
 - `Player.runes` and `ActivePlayer.fullRunes` can be empty list `[]` in some game modes — both typed `Optional`, guarded with falsy check before construction.
