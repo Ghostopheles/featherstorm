@@ -89,6 +89,11 @@ Categories and keys:
 - `companion.govee_enabled` (default `False`) — toggle Govee integration (replaces old `--no-govee` CLI flag)
 - `companion.max_reconnect_attempts` (default `5`), `companion.wait_interval` (default `2.0`s), `companion.poll_interval` (default `0.25`s), `companion.session_timeout` (default `30.0`s)
 - `highlights.export_path` — directory for saved highlight clips (prompted on first use if unset)
+- `highlights.export_constant_quality` (default `'20'`) — FFmpeg CRF quality
+- `highlights.export_preset` (default `'6'`) — FFmpeg preset (0–9, lower = slower/smaller)
+- `highlights.export_fps` (default `'60'`) — output framerate
+- `highlights.export_multipass` (default `'fullres'`) — multipass encoding mode
+- `highlights.export_audio_quality` (default `'192k'`) — audio bitrate
 - `meta.cache_dir` — cache directory for Data Dragon and other metadata
 
 Manage via CLI:

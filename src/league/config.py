@@ -15,7 +15,9 @@ DEFAULT_CONFIG = {
     "lcu": {"client_install_path": "F:/Games/Riot Games/League of Legends"},
     "govee": {"default_power_state": True, "default_brightness": 100, "request_timeout": 0.5},
     "chroma": {"teammate_dim_factor": 0.4},
-    "companion": {"default_player_name": "Dallas N Tollway", "default_player_tagline": "uwu", "govee_enabled": False},
+    "companion": {"default_player_name": "Dallas N Tollway", "default_player_tagline": "uwu", "govee_enabled": False, "wait_interval": 2.0, "poll_interval": 0.25, "max_reconnect_attempts": 5, "session_timeout": 30.0},
+    "meta": {"cache_dir": "X:/featherstorm/data"},
+    'highlights': {'export_constant_quality': '20', 'export_preset': '6', 'export_fps': '60', 'export_multipass': 'fullres', 'export_audio_quality': '192k', 'export_path': 'X:/featherstorm/data/highlights'}
 }
 
 _cache: dict | None = None
@@ -30,7 +32,7 @@ def _resolve(key: str, category: str | None) -> tuple[str, str]:
     if "." in key:
         cat, _, k = key.partition(".")
         return cat, k
-    raise ValueError(f"No category for {key!r} — use dot notation or pass category")
+    raise ValueError(f"No category for {key!r} - use dot notation or pass category")
 
 
 def _load() -> dict:

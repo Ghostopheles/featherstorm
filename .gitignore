@@ -18,3 +18,5 @@ ref/
 .vscode
 
 .claude/settings.local.json
+.omc
+todo.md
