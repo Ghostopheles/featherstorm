@@ -102,11 +102,13 @@ class MatchTimelineAnalyzer:
     targetParticipantID: int
     timeline: MatchTimeline
     target_track: ParticipantPositionTrack
+    participant_champions: dict[int, str]
 
-    def __init__(self, targetParticipantID: int, timeline: MatchTimeline):
+    def __init__(self, targetParticipantID: int, timeline: MatchTimeline, participant_champions: dict[int, str] | None = None):
         self.targetParticipantID = targetParticipantID
         self.timeline = timeline
         self.target_track = ParticipantPositionTrack(timeline, targetParticipantID)
+        self.participant_champions = participant_champions or {}
 
         self.__init_rules()
 
@@ -157,14 +159,31 @@ class MatchTimelineAnalyzer:
             else:
                 batches.append([event])
 
-        return [
-            HighlightEvent(
+        all_events = self.get_all_events()
+        highlights = []
+        for batch in batches:
+            batch_start = batch[0].timestamp - BATCH_WINDOW_MS
+            batch_end = batch[-1].timestamp + BATCH_WINDOW_MS
+            victim_ids = [
+                e.victimId
+                for e in all_events
+                if e.type == "CHAMPION_KILL"
+                and e.killerId == self.targetParticipantID
+                and batch_start <= e.timestamp <= batch_end
+                and e.victimId is not None
+            ]
+            victim_names = [
+                self.participant_champions[vid]
+                for vid in victim_ids
+                if vid in self.participant_champions
+            ]
+            highlights.append(HighlightEvent(
                 timestamp=batch[0].timestamp,
                 events=batch,
                 position=batch[0].position,
-            )
-            for batch in batches
-        ]
+                victim_champion_names=victim_names,
+            ))
+        return highlights
 
 
 @dataclass
@@ -172,6 +191,7 @@ class HighlightEvent:
     timestamp: int  # first event, in seconds
     events: list["TimelineEvent"]
     position: PositionDto
+    victim_champion_names: list[str] = field(default_factory=list)
 
     def __post_init__(self):
         self.timestamp = self.timestamp // 1000

@@ -155,7 +155,10 @@ class HighlightManager:
         match = await self.get_match(matchID)
         playerParticipantID = self.get_player_participant_id(match)
 
-        analyzer = MatchTimelineAnalyzer(playerParticipantID, timeline)
+        all_participants = [match.player, *match.teammates, *match.enemies]
+        participant_champions = {p.participantId: p.championName for p in all_participants}
+
+        analyzer = MatchTimelineAnalyzer(playerParticipantID, timeline, participant_champions)
         return analyzer.get_highlight_events()
 
     async def get_all_events_for_match(self, matchID: str) -> list[TimelineEvent]:
