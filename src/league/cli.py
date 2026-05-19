@@ -4,9 +4,11 @@ import asyncio
 
 from pathlib import Path
 from typing import Optional
-from rich.table import Table
-from rich.box import ROUNDED
 from dotenv import load_dotenv
+
+from rich import box
+from rich.table import Table
+from rich.align import Align
 
 from league import config
 from league.lcu import LCUClient
@@ -16,6 +18,7 @@ from league.riot_api import RiotAPIClient
 from league.companion import run_companion
 from league.dragon import CommunityDataDragon
 from league.highlights import HighlightManager
+from league.timeline import render_player_timeline
 from league.console import print, console, format_file_path
 
 config.init()
@@ -146,12 +149,19 @@ def riot_matches(
             print("No matches found.")
             return
 
-        match_table = Table(title="Recent Matches", show_header=True, header_style="featherstorm", box=ROUNDED)
-        match_table.add_column("#", width=4)
-        match_table.add_column("Champion", width=15)
+        match_table = Table(
+            title=f"({count} most recent matches for {game_name}#{tag_line})",
+            show_header=True,
+            border_style="rakan",
+            header_style="featherstorm",
+            box=box.ROUNDED,
+            show_lines=True
+        )
+        match_table.add_column("#", width=3)
+        match_table.add_column("Champion", width=15, style="eminence")
         match_table.add_column("Result", width=8)
-        match_table.add_column("K/D/A", width=10)
-        match_table.add_column("Duration", width=8)
+        match_table.add_column("KDA Ratio : K/D/A", width=20)
+        match_table.add_column("Duration", width=8, highlight=True)
         match_table.add_column("Game Mode", width=10)
         match_table.add_column("Match ID", width=15)
 
@@ -162,11 +172,26 @@ def riot_matches(
             if player:
                 mins = match.info.gameDuration // 60
                 result = "[bold green]WIN[/bold green]" if player.win else "[bold red]LOSS[/bold red]"
-                match_table.add_row(f"{i}", f"[eminence]{player.championName}[/eminence]", result, f"{player.kills}/{player.deaths}/{player.assists}", f"{mins}m", match.info.gameMode, match.metadata.matchId)
+
+                kda_ratio = (player.kills + player.assists) / max(1, player.deaths)
+
+                kda_left = f"{kda_ratio:.2f}".rjust(5)
+
+                row_style = ""
+                if kda_ratio < 1:
+                    kda_left = f"[bold red]{kda_left}[/]"
+                    row_style = "less_dim"
+                elif kda_ratio > 4:
+                    kda_left = f"[bold green]{kda_left}[/]"
+
+                kda_right = f"{player.kills}/{player.deaths}/{player.assists}"
+                kda_str = f"KDA {kda_left} : {kda_right}"
+
+                match_table.add_row(f"{i}", player.championName, result, kda_str, f"[green]{mins}[/]m", match.info.gameMode, match.metadata.matchId, style=row_style)
             else:
                 print(f"{i}. {match.metadata.matchId}")
 
-        print(match_table)
+        print(Align.center(match_table))
 
     asyncio.run(run())
 
@@ -181,12 +206,34 @@ def riot_match(match_id: str):
     asyncio.run(run())
 
 
-@riot_app.command(name="timeline", help="Show timeline for a specific match.")
-def riot_timeline(match_id: str):
+@riot_app.command(name="timeline", help="Show player event timeline for a specific match.")
+def riot_timeline(
+    match_id: str,
+    game_name: str = config.get("companion.default_player_name"),
+    tag_line: str = config.get("companion.default_player_tagline"),
+):
     async def run():
         client = _riot_client()
-        timeline = await client.get_match_timeline(match_id)
-        print(timeline)
+        puuid = await client.get_puuid(game_name, tag_line)
+        if not puuid:
+            print(f"[bold red]Player {game_name}#{tag_line} not found[/bold red]")
+            return
+        match, timeline = await asyncio.gather(
+            client.get_match(match_id),
+            client.get_match_timeline(match_id),
+        )
+        player = next((p for p in match.info.participants if p.puuid == puuid), None)
+        if player is None:
+            print(f"[bold red]{game_name}#{tag_line} not in match {match_id}[/bold red]")
+            return
+        participant_champions = {p.participantId: p.championName for p in match.info.participants}
+        console.print(render_player_timeline(
+            timeline,
+            player.participantId,
+            participant_champions,
+            game_duration_seconds=match.info.gameDuration,
+            bar_width=max(60, console.width - 4),
+        ))
 
     asyncio.run(run())
 
