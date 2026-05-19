@@ -4,6 +4,8 @@ import asyncio
 
 from pathlib import Path
 from typing import Optional
+from rich.table import Table
+from rich.box import ROUNDED
 from dotenv import load_dotenv
 
 from league import config
@@ -143,6 +145,16 @@ def riot_matches(
         if not matches:
             print("No matches found.")
             return
+
+        match_table = Table(title="Recent Matches", show_header=True, header_style="featherstorm", box=ROUNDED)
+        match_table.add_column("#", width=4)
+        match_table.add_column("Champion", width=15)
+        match_table.add_column("Result", width=8)
+        match_table.add_column("K/D/A", width=10)
+        match_table.add_column("Duration", width=8)
+        match_table.add_column("Game Mode", width=10)
+        match_table.add_column("Match ID", width=15)
+
         for i, match_id in enumerate(matches, 1):
             match = await client.get_match(match_id)
             pm = match.info.participants
@@ -150,11 +162,11 @@ def riot_matches(
             if player:
                 mins = match.info.gameDuration // 60
                 result = "[bold green]WIN[/bold green]" if player.win else "[bold red]LOSS[/bold red]"
-                print(
-                    f"{i}. {match.metadata.matchId} | {result} | {player.championName} {player.kills}/{player.deaths}/{player.assists} | {mins}m | {match.info.gameMode}"
-                )
+                match_table.add_row(f"{i}", f"[eminence]{player.championName}[/eminence]", result, f"{player.kills}/{player.deaths}/{player.assists}", f"{mins}m", match.info.gameMode, match.metadata.matchId)
             else:
                 print(f"{i}. {match.metadata.matchId}")
+
+        print(match_table)
 
     asyncio.run(run())
 

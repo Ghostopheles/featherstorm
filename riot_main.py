@@ -22,8 +22,6 @@ MATCH_ID = "NA1_5549854658"
 NAME = "Dallas N Tollway"
 TAGLINE = "uwu"
 
-LAME_EVENTS = ["CHAMPION_KILL", "ELITE_MONSTER_KILL", "BUILDING_KILL", "TURRET_PLATE_DESTROYED", "GAME_END"]
-
 async def amain():
     api_key = os.getenv("RIOT_API_KEY")
     highlights = await HighlightManager.create(NAME, TAGLINE, GAME_INSTALL_PATH, HIGHLIGHTS_PATH, api_key)
