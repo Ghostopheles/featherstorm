@@ -139,59 +139,60 @@ def riot_matches(
     match_type: Optional[QueueType] = None,
 ):
     async def run():
-        client = _riot_client()
-        puuid = await client.get_puuid(game_name, tag_line)
-        if not puuid:
-            print(f"[bold red]Player {game_name}#{tag_line} not found[/bold red]")
-            return
-        matches = await client.get_match_ids(puuid, count=count, match_type=match_type)
-        if not matches:
-            print("No matches found.")
-            return
+        with console.status("[eminence]Processing matches...[/]", spinner="simpleDotsScrolling", spinner_style="featherstorm"):
+            client = _riot_client()
+            puuid = await client.get_puuid(game_name, tag_line)
+            if not puuid:
+                print(f"[bold red]Player {game_name}#{tag_line} not found[/bold red]")
+                return
+            matches = await client.get_match_ids(puuid, count=count, match_type=match_type)
+            if not matches:
+                print("No matches found.")
+                return
 
-        match_table = Table(
-            title=f"({count} most recent matches for {game_name}#{tag_line})",
-            show_header=True,
-            border_style="rakan",
-            header_style="featherstorm",
-            box=box.ROUNDED,
-            show_lines=True
-        )
-        match_table.add_column("#", width=3)
-        match_table.add_column("Champion", width=15, style="eminence")
-        match_table.add_column("Result", width=8)
-        match_table.add_column("KDA Ratio : K/D/A", width=20)
-        match_table.add_column("Duration", width=8, highlight=True)
-        match_table.add_column("Game Mode", width=10)
-        match_table.add_column("Match ID", width=15)
+            match_table = Table(
+                title=f"({count} most recent matches for {game_name}#{tag_line})",
+                show_header=True,
+                border_style="rakan",
+                header_style="featherstorm",
+                box=box.ROUNDED,
+                show_lines=True
+            )
+            match_table.add_column("#", width=3)
+            match_table.add_column("Champion", width=15, style="eminence")
+            match_table.add_column("Result", width=8)
+            match_table.add_column("KDA Ratio : K/D/A", width=20)
+            match_table.add_column("Duration", width=8, highlight=True)
+            match_table.add_column("Game Mode", width=10)
+            match_table.add_column("Match ID", width=15)
 
-        for i, match_id in enumerate(matches, 1):
-            match = await client.get_match(match_id)
-            pm = match.info.participants
-            player = next((p for p in pm if p.puuid == puuid), None)
-            if player:
-                mins = match.info.gameDuration // 60
-                result = "[bold green]WIN[/bold green]" if player.win else "[bold red]LOSS[/bold red]"
+            for i, match_id in enumerate(matches, 1):
+                match = await client.get_match(match_id)
+                pm = match.info.participants
+                player = next((p for p in pm if p.puuid == puuid), None)
+                if player:
+                    mins = match.info.gameDuration // 60
+                    result = "[bold green]WIN[/bold green]" if player.win else "[bold red]LOSS[/bold red]"
 
-                kda_ratio = (player.kills + player.assists) / max(1, player.deaths)
+                    kda_ratio = (player.kills + player.assists) / max(1, player.deaths)
 
-                kda_left = f"{kda_ratio:.2f}".rjust(5)
+                    kda_left = f"{kda_ratio:.2f}".rjust(5)
 
-                row_style = ""
-                if kda_ratio < 1:
-                    kda_left = f"[bold red]{kda_left}[/]"
-                    row_style = "less_dim"
-                elif kda_ratio > 4:
-                    kda_left = f"[bold green]{kda_left}[/]"
+                    row_style = ""
+                    if kda_ratio < 1:
+                        kda_left = f"[bold red]{kda_left}[/]"
+                        row_style = "less_dim"
+                    elif kda_ratio > 4:
+                        kda_left = f"[bold green]{kda_left}[/]"
 
-                kda_right = f"{player.kills}/{player.deaths}/{player.assists}"
-                kda_str = f"KDA {kda_left} : {kda_right}"
+                    kda_right = f"{player.kills}/{player.deaths}/{player.assists}"
+                    kda_str = f"KDA {kda_left} : {kda_right}"
 
-                match_table.add_row(f"{i}", player.championName, result, kda_str, f"[green]{mins}[/]m", match.info.gameMode, match.metadata.matchId, style=row_style)
-            else:
-                print(f"{i}. {match.metadata.matchId}")
+                    match_table.add_row(f"{i}", player.championName, result, kda_str, f"[green]{mins}[/]m", match.info.gameMode, match.metadata.matchId, style=row_style)
+                else:
+                    print(f"{i}. {match.metadata.matchId}")
 
-        print(Align.center(match_table))
+            print(Align.center(match_table))
 
     asyncio.run(run())
 
