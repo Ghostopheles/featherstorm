@@ -1,7 +1,6 @@
+from pathlib import Path
 from rich.theme import Theme
 from rich.console import Console
-
-from pathlib import Path
 from typing import Callable, Any, Union
 
 DARK_XAYAH = "#840e3e"
