@@ -9,12 +9,14 @@ from rich.progress import (
 )
 
 from pathlib import Path
+from typing import Optional
 
 import league.config as cfg
 
-from league.lcu.lcu import LCUClient
+from league.lcu.lcu import LCUClient, LCUMatch
+from league.lcu.exceptions import LCUMissingReplayMetadataException
 from league.models import PlayerMatch, TimelineEvent, MatchTimeline
-from league.enums import QueueType
+from league.enums import QueueType, MapQueueType
 from league.timeline import MatchTimelineAnalyzer, HighlightEvent
 from league.riot_api import RiotAPIClient
 from league.console import console, format_file_path
@@ -125,20 +127,35 @@ class HighlightManager:
 
         return self.__match_cache.get(matchID)
 
-    async def get_recent_matches(self, count: int = None) -> list[PlayerMatch]:
+    async def get_recent_riot_matches(
+            self,
+            count: int = 10,
+            match_type: Optional[QueueType] = QueueType.Normal,
+            map_queue_type: Optional[MapQueueType] = None,
+        ) -> list[PlayerMatch]:
         if self.__matches is None:
-            self.__matches = await self.riot.get_recent_matches(self.puuid, count=count, match_type=QueueType.Normal)
-
+            self.__matches = await self.riot.get_recent_matches(self.puuid, count=count, match_type=match_type, map_queue_type=map_queue_type)
             self.__match_cache = {match.matchId: match for match in self.__matches}
 
         return self.__matches
 
-    async def get_last_match(self) -> PlayerMatch:
-        matches = await self.get_recent_matches()
+    async def get_recent_matches(
+        self,
+        count: int = 10,
+        map_queue_type: Optional[MapQueueType] = None,
+    ) -> list[LCUMatch]:
+        if self.__matches is None or len(self.__matches) != count:
+            self.__matches = await self.lcu.get_match_history(count=count, map_queue_type=map_queue_type)
+            self.__match_cache = {match.matchId: match for match in self.__matches}
+
+        return self.__matches
+
+    async def get_last_match(self, map_queue_type: Optional[MapQueueType] = None) -> PlayerMatch:
+        matches = await self.get_recent_matches(count=1, map_queue_type=map_queue_type)
         return matches[0]
 
-    async def get_last_match_id(self) -> str:
-        match = await self.get_last_match()
+    async def get_last_match_id(self, map_queue_type: Optional[MapQueueType] = None) -> str:
+        match = await self.get_last_match(map_queue_type=map_queue_type)
         return match.matchId
 
     async def get_timeline_for_match(self, matchID: str) -> MatchTimeline:
@@ -170,7 +187,7 @@ class HighlightManager:
         analyzer = MatchTimelineAnalyzer(playerParticipantID, timeline)
         return analyzer.get_all_events()
 
-    async def capture_highlights_for_match(self, matchID: str, numHighlights: int = None):
+    async def capture_highlights_for_match(self, matchID: str, numHighlights: int = 5):
         print(f"Capturing {numHighlights} highlight(s) for match [highlights_match_id]{matchID}[/]")
 
         with console.status("", spinner="simpleDotsScrolling", spinner_style="featherstorm") as status:
@@ -183,7 +200,8 @@ class HighlightManager:
             self.__current_match = match
 
             status.update("Opening replay file...")
-            await self.open_replay(matchID)
+            if not await self.open_replay(matchID):
+                return
             await self.wait_for_replay_ready()
         try:
             await self.record(events, numHighlights)
@@ -229,9 +247,15 @@ class HighlightManager:
 
         return await self.wait_for(check)
 
-    async def open_replay(self, matchID: str):
+    async def open_replay(self, matchID: str) -> bool:
         matchID = matchID.replace("NA1_", "")  # need to remove prefix since the LCU doesn't use them
-        await self.lcu.launch_replay(matchID)
+        try:
+            await self.lcu.launch_replay(matchID)
+        except LCUMissingReplayMetadataException:
+            print(f"[error]Unable to open replay for match {matchID}[/]")
+            return False
+
+        return True
 
     async def close_active_replay(self):
         if self.pid is not None:

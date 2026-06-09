@@ -1,8 +1,8 @@
-from pathlib import Path
 from dataclasses import dataclass, field
 from enum import StrEnum, Enum
 from typing import Optional
 
+from league.enums import MapQueueType
 
 @dataclass
 class MyChampSelection:
@@ -156,6 +156,9 @@ class ParticipantStats:
     firstTowerKill: bool
     gameEndedInEarlySurrender: bool
     gameEndedInSurrender: bool
+    gameEndedInIGNBSurrender: bool
+    causedGameEndFromIGNBSurrender: bool
+    wasSevereTransgressor: bool
     goldEarned: int
     goldSpent: int
     inhibitorKills: int
@@ -254,7 +257,6 @@ class ParticipantStats:
     wardsPlaced: int
     win: bool
 
-
 @dataclass
 class ParticipantTimeline:
     participantId: int
@@ -329,15 +331,15 @@ class LCUMatch:
     participantIdentities: list[ParticipantIdentity]
     participants: list[Participant]
     platformId: str
-    queueId: int
+    queueId: MapQueueType
     seasonId: int
     teams: list[MatchTeam]
 
     def __post_init__(self):
         self.participantIdentities = [ParticipantIdentity(**p) for p in self.participantIdentities]
         self.participants = [Participant(**p) for p in self.participants]
+        self.queueId = MapQueueType(self.queueId)
         self.teams = [MatchTeam(**t) for t in self.teams]
-
 
 @dataclass
 class LCUGames:
@@ -351,6 +353,9 @@ class LCUGames:
     def __post_init__(self):
         self.games = [LCUMatch(**g) for g in self.games]
 
+    def update_games(self, new: list[LCUMatch]):
+        self.games = new
+        self.gameCount = len(new)
 
 @dataclass
 class LCUMatchHistory:
@@ -360,6 +365,9 @@ class LCUMatchHistory:
 
     def __post_init__(self):
         self.games = LCUGames(**self.games)
+
+    def get_matches_by_map_queue_type(self, map_queue_type: MapQueueType) -> list[LCUMatch]:
+        return [m for m in self.games.games if m.queueId == map_queue_type]
 
 
 # ---------------------------------------------------------------------------
@@ -430,3 +438,23 @@ class LCUTimeline:
 
     def __post_init__(self):
         self.frames = [LCUTimelineFrame(**f) for f in self.frames]
+
+class LCUReplayState(StrEnum):
+    Download = "download"
+    Downloading = "downloading"
+    Found = "found"
+    Incompatible = "incompatible"
+    Error = "error"
+    Unsupported = "unsupported"
+    Lost = "lost"
+    Retry = "retryDownload"
+    MissingOrExpired = "missingOrExpired"
+    Watch = "watch"
+    Checking = "checking"
+
+class LCUReplayDownloadStatus(Enum):
+    Success = 1
+    Retry = 2
+    Failed = 3
+    Downloading = 4
+    NotStarted = 5

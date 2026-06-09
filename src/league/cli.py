@@ -5,6 +5,7 @@ import asyncio
 from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
+from dataclasses import asdict
 
 from rich import box
 from rich.table import Table
@@ -12,7 +13,7 @@ from rich.align import Align
 
 from league import config
 from league.lcu import LCUClient
-from league.enums import QueueType
+from league.enums import QueueType, MapQueueType, MapQueueTypeName
 from league.constants import APP_NAME
 from league.riot_api import RiotAPIClient
 from league.companion import run_companion
@@ -45,15 +46,44 @@ def app_main():
 def default():
     asyncio.run(run_companion())
 
+default_client_path = Path(config.get("lcu.client_install_path"))
 
 lcu_app = typer.Typer(name="lcu", no_args_is_help=True, help="League Client API commands")
 app.add_typer(lcu_app)
 
+@lcu_app.command(name="matches", help="Fetch LCU match history")
+def lcu_matches(
+    client_install_path: Optional[Path] = default_client_path,
+    count: int = 5,
+    map_queue_type: Optional[MapQueueTypeName] = None
+):
+    client = LCUClient(client_install_path=client_install_path)
+
+    if map_queue_type is not None:
+        map_queue_type = MapQueueType[map_queue_type]
+
+    matches = asyncio.run(client.get_match_history(count=count, map_queue_type=map_queue_type))
+    print(matches)
+
+@lcu_app.command(name="last", help="Fetch last match from LCU")
+def lcu_last_match(
+    client_install_path: Optional[Path] = default_client_path,
+    map_queue_type: Optional[MapQueueTypeName] = None,
+    filter: Optional[str] = None
+):
+    client = LCUClient(client_install_path=client_install_path)
+
+    if map_queue_type is not None:
+        map_queue_type = MapQueueType[map_queue_type]
+
+    match = asyncio.run(client.get_last_match(map_queue_type=map_queue_type))
+    if filter is not None:
+        print(getattr(match, filter))
+    else:
+        print(match)
+
 lcu_champselect_app = typer.Typer(name="champ-select", no_args_is_help=True)
 lcu_app.add_typer(lcu_champselect_app)
-
-default_client_path = Path(config.get("lcu.client_install_path"))
-
 
 @lcu_champselect_app.command(name="locked", help="Returns the ID of your currently locked-in champion")
 def get_locked(client_install_path: Optional[Path] = default_client_path):
@@ -137,7 +167,11 @@ def riot_matches(
     tag_line: str = config.get("companion.default_player_tagline"),
     count: int = 5,
     match_type: Optional[QueueType] = None,
+    map_queue_type: Optional[MapQueueTypeName] = None
 ):
+    if map_queue_type is not None:
+        map_queue_type = MapQueueType[map_queue_type]
+
     async def run():
         with console.status("[eminence]Processing matches...[/]", spinner="simpleDotsScrolling", spinner_style="featherstorm"):
             client = _riot_client()
@@ -145,7 +179,7 @@ def riot_matches(
             if not puuid:
                 print(f"[bold red]Player {game_name}#{tag_line} not found[/bold red]")
                 return
-            matches = await client.get_match_ids(puuid, count=count, match_type=match_type)
+            matches = await client.get_match_ids(puuid, count=count, match_type=match_type, map_queue_type=map_queue_type)
             if not matches:
                 print("No matches found.")
                 return
@@ -249,10 +283,16 @@ def capture_highlights(
     export_path: Optional[Path] = None,
     name: Optional[str] = config.get("companion.default_player_name"),
     tagline: Optional[str] = config.get("companion.default_player_tagline"),
-    count: Optional[int] = None,
+    count: Optional[int] = 2,
+    map_queue_type: Optional[MapQueueTypeName] = None
 ):
     load_dotenv()
     api_key = os.getenv("RIOT_API_KEY")
+
+    if map_queue_type is not None:
+        map_queue_type = MapQueueType[map_queue_type]
+
+    print(map_queue_type.name, map_queue_type.value)
 
     if game_path is None:
         path, was_input = try_get_cfg_or_input("lcu", "client_install_path", "League of Legends install path")
@@ -276,7 +316,7 @@ def capture_highlights(
 
     async def run():
         highlights = await HighlightManager.create(name, tagline, game_path, export_path, api_key)
-        last_match_id = await highlights.get_last_match_id()
+        last_match_id = await highlights.get_last_match_id(map_queue_type)
         await highlights.capture_highlights_for_match(last_match_id, numHighlights=count)
 
     asyncio.run(run())

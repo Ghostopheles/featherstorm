@@ -8,8 +8,10 @@ from dataclasses import dataclass
 
 from league.http import BaseAPIClient
 from league.dragon import DataDragon
+from league.enums import MapQueueType
 from league.lcu.models import *
-from league.lcu.socket import LCUWebsocketClient, LCUWebsocketEvent, LCUWebsocketEventCallback
+from league.lcu.socket import LCUWebsocketClient, LCUWebsocketEventCallback
+from league.lcu.exceptions import LCUMissingReplayMetadataException, LCUIncompatibleReplayException
 
 FALLBACK_LOCKFILE_PATH = Path("F:/Games/League of Legends/lockfile")
 
@@ -161,20 +163,36 @@ class LCUClient(BaseAPIClient):
         res = await self.get(f"/lol-match-history/v1/games/{matchID}")
         return LCUMatch(**res)
 
-    async def get_match_history(self) -> LCUMatchHistory:
-        res = await self.get("/lol-match-history/v1/products/lol/current-summoner/matches")
-        return LCUMatchHistory(**res)
+    async def get_match_history(
+        self,
+        start_index: int = 0,
+        end_index: Optional[int] = None,
+        count: Optional[int] = None,
+        map_queue_type: Optional[MapQueueType] = None,
+    ) -> LCUMatchHistory:
+        params = {
+            "begIndex": start_index,
+            "endIndex": end_index or (start_index + count)
+        }
+        res = await self.get("/lol-match-history/v1/products/lol/current-summoner/matches", params=params)
+
+        history = LCUMatchHistory(**res)
+        if map_queue_type is not None:
+            filtered = history.get_matches_by_map_queue_type(map_queue_type)
+            history.games.update_games(filtered)
+
+        return history
 
     async def get_recent_match_ids(self) -> list[int]:
         history = await self.get_match_history()
         return [g.gameId for g in history.games.games]
 
-    async def get_last_match(self) -> LCUMatch:
-        history = await self.get_match_history()
+    async def get_last_match(self, map_queue_type: Optional[MapQueueType] = None) -> LCUMatch:
+        history = await self.get_match_history(count=1, map_queue_type=map_queue_type)
         return history.games.games[0]
 
-    async def get_last_match_id(self) -> int:
-        last_match = await self.get_last_match()
+    async def get_last_match_id(self, map_queue_type: Optional[MapQueueType] = None) -> int:
+        last_match = await self.get_last_match(map_queue_type=map_queue_type)
         return last_match.gameId
 
     async def get_match_timeline(self, matchID: int) -> LCUTimeline:
@@ -186,16 +204,59 @@ class LCUClient(BaseAPIClient):
         return game.participantIdentities[0].participantId
 
     async def download_replay(self, matchID: int):
-        res = await self.post(f"/lol-replays/v1/rofls/{matchID}/download/graceful", json={"gameId": matchID})
-        return res
+        async def start_download(matchID: int):
+            return await self.post(f"/lol-replays/v1/rofls/{matchID}/download/graceful", json={"gameId": matchID}, no_json=True)
+
+        async def check_download(matchID: int) -> LCUReplayDownloadStatus:
+            progress = await self.get_replay_metadata(matchID)
+            state = progress.get("state")
+            match state:
+                case LCUReplayState.Watch:
+                    return LCUReplayDownloadStatus.Success
+                case LCUReplayState.Retry:
+                    return LCUReplayDownloadStatus.Retry
+                case _:
+                    return LCUReplayDownloadStatus.Downloading
+
+        download_state = LCUReplayDownloadStatus.NotStarted
+        res = await start_download(matchID)
+        print(f"replay download start status: {res.status_code}")
+        for _ in range(10):
+            download_state = await check_download(matchID)
+            match download_state:
+                case LCUReplayDownloadStatus.Success:
+                    break
+                case LCUReplayDownloadStatus.Failed:
+                    raise LCUIncompatibleReplayException(matchID=matchID)
+                case LCUReplayDownloadStatus.Downloading:
+                    await asyncio.sleep(1)
+                case LCUReplayDownloadStatus.NotStarted | LCUReplayDownloadStatus.Retry:
+                    start_res = await start_download(matchID)
+                    print(f"replay download retry status: {start_res.status_code}")
+                case _:
+                    print(f"status: {download_state}")
+                    break
+
+        return download_state
 
     async def launch_replay(self, matchID: int):
         metadata = await self.get_replay_metadata(matchID)
-        if metadata.get("state") == "download":
-            await self.download_replay(matchID)
-            await asyncio.sleep(5)
+
+        if metadata is None:
+            await self.create_replay_metadata(matchID)
+            metadata = await self.get_replay_metadata(matchID)
+
+        if metadata is None:
+            raise LCUMissingReplayMetadataException(matchID=matchID)
+
+        if metadata.get("state") != LCUReplayState.Watch:
+            success = await self.download_replay(matchID)
+            print(f"download success: {success}")
 
         return await self.post(f"/lol-replays/v1/rofls/{matchID}/watch", json={"gameId": matchID})
+
+    async def create_replay_metadata(self, matchID: int):
+        return await self.post(f"/lol-replays/v2/metadata/{matchID}/create")
 
     async def get_replay_metadata(self, matchID: int):
         return await self.get(f"/lol-replays/v1/metadata/{matchID}")

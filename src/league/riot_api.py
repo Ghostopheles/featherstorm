@@ -2,7 +2,7 @@ import httpx
 
 from typing import Optional, Any, override
 
-from league.enums import QueueType
+from league.enums import QueueType, MapQueueType
 from league.http import BaseAPIClient
 from league.models import Match, MatchTimeline, PlayerMatch
 
@@ -63,15 +63,15 @@ class RiotAPIClient(BaseAPIClient):
         count: int = 20,
         start: int = 0,
         match_type: Optional[QueueType] = None,
-        queue: Optional[int] = None,
+        map_queue_type: Optional[MapQueueType] = None,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
     ) -> list[str]:
         params = {"count": count, "start": start}
         if match_type is not None:
             params["type"] = match_type
-        if queue is not None:
-            params["queue"] = queue
+        if map_queue_type is not None:
+            params["queue"] = map_queue_type.value
         if start_time is not None:
             params["startTime"] = start_time
         if end_time is not None:
@@ -90,8 +90,14 @@ class RiotAPIClient(BaseAPIClient):
         data = await self.get(f"/lol/match/v5/matches/{match_id}/timeline")
         return MatchTimeline.model_validate(data)
 
-    async def get_recent_matches(self, puuid: str, count: int = 3, match_type: QueueType = QueueType.Normal) -> list[PlayerMatch]:
-        match_ids = await self.get_match_ids(puuid, count=count, match_type=match_type)
+    async def get_recent_matches(
+            self,
+            puuid: str,
+            count: int = 3,
+            match_type: QueueType = QueueType.Normal,
+            map_queue_type: Optional[MapQueueType] = None,
+        ) -> list[PlayerMatch]:
+        match_ids = await self.get_match_ids(puuid, count=count, match_type=match_type, map_queue_type=map_queue_type)
         if not match_ids:
             return None
 
