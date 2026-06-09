@@ -1,7 +1,6 @@
 import httpx
 import asyncio
 
-from rich import print
 from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass
@@ -9,6 +8,7 @@ from dataclasses import dataclass
 from league.http import BaseAPIClient
 from league.dragon import DataDragon
 from league.enums import MapQueueType
+from league.console import print
 from league.lcu.models import *
 from league.lcu.socket import LCUWebsocketClient, LCUWebsocketEventCallback
 from league.lcu.exceptions import LCUMissingReplayMetadataException, LCUIncompatibleReplayException
@@ -16,11 +16,6 @@ from league.lcu.exceptions import LCUMissingReplayMetadataException, LCUIncompat
 FALLBACK_LOCKFILE_PATH = Path("F:/Games/League of Legends/lockfile")
 
 RIOT_USERNAME = "riot"
-
-DEFAULT_QUEUE_ID = 430
-PRACTICE_QUEUE_ID = 3140
-SUMMONERS_RIFT_MAP_ID = 11
-
 
 @dataclass(frozen=True, slots=True)
 class LCULockfileData:
@@ -113,14 +108,14 @@ class LCUClient(BaseAPIClient):
 
     async def create_custom_game_lobby(self, game_mode: Optional[LobbyGameMode] = LobbyGameMode.Practice, **kwargs):
         lobby_config = {
-            "queueId": PRACTICE_QUEUE_ID,
+            "queueId": MapQueueType.PracticeTool,
             "customGameLobby": {
                 "configuration": {
                     "gameMode": game_mode,
                     "gameMutator": "",
                     "mutators": {"id": 1},
                     "gameServerRegion": "",
-                    "mapId": SUMMONERS_RIFT_MAP_ID,
+                    "mapId": LCUMap.SummonersRift,
                     "spectatorPolicy": "AllAllowed",
                     "teamSize": 5,
                     "maxPlayerCount": 10,
@@ -136,14 +131,14 @@ class LCUClient(BaseAPIClient):
         res = await self.post("/lol-lobby/v2/lobby", json=lobby_config)
         return res
 
-    async def create_normal_game_lobby(self, queueID: Optional[int] = DEFAULT_QUEUE_ID, **kwargs):
+    async def create_normal_game_lobby(self, queueID: Optional[MapQueueType] = MapQueueType.DraftPick, **kwargs):
         """Non-functional right now"""
         lobby_config = {
             "queueId": queueID,
             "customGameLobby": {
                 "configuration": {
                     "gameMode": LobbyGameMode.Normal,
-                    "mapId": SUMMONERS_RIFT_MAP_ID,
+                    "mapId": LCUMap.SummonersRift,
                 }
             },
         }
@@ -170,9 +165,12 @@ class LCUClient(BaseAPIClient):
         count: Optional[int] = None,
         map_queue_type: Optional[MapQueueType] = None,
     ) -> LCUMatchHistory:
+        if end_index is None:
+            end_index = start_index + count
+
         params = {
             "begIndex": start_index,
-            "endIndex": end_index or (start_index + count)
+            "endIndex": end_index
         }
         res = await self.get("/lol-match-history/v1/products/lol/current-summoner/matches", params=params)
 
@@ -260,3 +258,10 @@ class LCUClient(BaseAPIClient):
 
     async def get_replay_metadata(self, matchID: int):
         return await self.get(f"/lol-replays/v1/metadata/{matchID}")
+
+    def get_position_for_lane_and_role(self, lane: LCULane, role: LCURole) -> LCUPosition:
+        try:
+            return PlayerRoleMapping[(lane, role)]
+        except KeyError:
+            print(f"[warning]Unable to find position for lane={lane}, role={role}[/]")
+            return LCUPosition.Unknown

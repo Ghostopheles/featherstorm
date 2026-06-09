@@ -114,6 +114,7 @@ class MapQueueType(Enum):
     Tutorial3 = 2020
     Brawl = 2300
     ARAMMayhem = 2400
+    PracticeTool = 3140
 
 class ReplaySequenceEasing(StrEnum):
     LINEAR = "linear"

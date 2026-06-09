@@ -4,6 +4,10 @@ from typing import Optional
 
 from league.enums import MapQueueType
 
+class LCUMap(Enum):
+    SummonersRift = 11
+    HowlingAbyss = 12
+
 @dataclass
 class MyChampSelection:
     assignedPosition: str
@@ -74,43 +78,42 @@ class LobbyType(Enum):
 
 
 class LCURole(StrEnum):
-    Duo = "DUO"
-    DuoCarry = "DUO_CARRY"
-    DuoSupport = "DUO_SUPPORT"
-    Solo = "SOLO"
-    Unknown = "NONE"
+    DUO = "DUO"
+    DUOCARRY = "DUO_CARRY"
+    DUOSUPPORT = "DUO_SUPPORT"
+    SOLO = "SOLO"
+    SUPPORT = "SUPPORT"
+    UNKNOWN = "NONE"
 
 
 class LCULane(StrEnum):
-    Top = "TOP_LANE"
-    Middle = "MID_LANE"
-    Bottom = "BOT_LANE"
-    Jungle = "JUNGLE"
+    TOP = "TOP"
+    MID_LANE = "MIDDLE"
+    BOT_LANE = "BOTTOM"
+    JUNGLE = "JUNGLE"
+    NONE = "NONE"
 
 
 class LCUPosition(StrEnum):
-    Top = "TOP"
-    Middle = "MIDDLE"
-    Jungle = "JUNGLE"
-    Bottom = "BOTTOM"
-    Support = "UTILITY"
-    Apex = "APEX"
-    Unknown = "NONE"
+    Top = "Top"
+    Middle = "Middle"
+    Jungle = "Jungle"
+    Bottom = "Bottom"
+    Support = "Support"
+    Apex = "Apex"
+    Unknown = "N/A"
 
 
 PlayerRoleMapping = {
-    (LCULane.Top, LCURole.Solo): LCUPosition.Top,
-    (LCULane.Middle, LCURole.Solo): LCUPosition.Middle,
-    (LCULane.Jungle, LCURole.Unknown): LCUPosition.Jungle,
-    (LCULane.Bottom, LCURole.DuoCarry): LCUPosition.Bottom,
-    (LCULane.Bottom, LCURole.DuoSupport): LCUPosition.Support,
+    (LCULane.TOP, LCURole.SOLO): LCUPosition.Top,
+    (LCULane.MID_LANE, LCURole.SOLO): LCUPosition.Middle,
+    (LCULane.JUNGLE, LCURole.UNKNOWN): LCUPosition.Jungle,
+    (LCULane.BOT_LANE, LCURole.DUOCARRY): LCUPosition.Bottom,
+    (LCULane.BOT_LANE, LCURole.DUOSUPPORT): LCUPosition.Support,
+    (LCULane.BOT_LANE, LCURole.SUPPORT): LCUPosition.Support,
+    (LCULane.NONE, LCURole.DUO): LCUPosition.Unknown,
+    (LCULane.NONE, LCURole.SUPPORT): LCUPosition.Unknown,
 }
-
-
-# ---------------------------------------------------------------------------
-# LCU Match History models (older v4-style format from the LCU API)
-# ---------------------------------------------------------------------------
-
 
 @dataclass
 class MatchPlayer:
@@ -260,8 +263,8 @@ class ParticipantStats:
 @dataclass
 class ParticipantTimeline:
     participantId: int
-    lane: str
-    role: str
+    lane: LCULane
+    role: LCURole
     creepsPerMinDeltas: dict = field(default_factory=dict)
     csDiffPerMinDeltas: dict = field(default_factory=dict)
     damageTakenDiffPerMinDeltas: dict = field(default_factory=dict)
@@ -269,6 +272,10 @@ class ParticipantTimeline:
     goldPerMinDeltas: dict = field(default_factory=dict)
     xpDiffPerMinDeltas: dict = field(default_factory=dict)
     xpPerMinDeltas: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        self.lane = LCULane(self.lane)
+        self.role = LCURole(self.role)
 
 
 @dataclass
@@ -327,7 +334,7 @@ class LCUMatch:
     gameModeMutators: list
     gameType: str
     gameVersion: str
-    mapId: int
+    mapId: LCUMap
     participantIdentities: list[ParticipantIdentity]
     participants: list[Participant]
     platformId: str
@@ -338,6 +345,7 @@ class LCUMatch:
     def __post_init__(self):
         self.participantIdentities = [ParticipantIdentity(**p) for p in self.participantIdentities]
         self.participants = [Participant(**p) for p in self.participants]
+        self.mapId = LCUMap(self.mapId)
         self.queueId = MapQueueType(self.queueId)
         self.teams = [MatchTeam(**t) for t in self.teams]
 
@@ -368,11 +376,6 @@ class LCUMatchHistory:
 
     def get_matches_by_map_queue_type(self, map_queue_type: MapQueueType) -> list[LCUMatch]:
         return [m for m in self.games.games if m.queueId == map_queue_type]
-
-
-# ---------------------------------------------------------------------------
-# LCU Timeline models
-# ---------------------------------------------------------------------------
 
 
 @dataclass
