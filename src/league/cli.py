@@ -187,7 +187,7 @@ def get_locked(client_install_path: Optional[Path] = default_client_path):
 @lcu_champselect_app.command(name="hovered", help="Returns the currently hovered champion")
 def get_hovered(client_install_path: Optional[Path] = default_client_path):
     client = LCUClient(client_install_path)
-    print(asyncio.run(client.get_selected_champion()))
+    print(asyncio.run(client.get_hovered_champion()))
 
 
 lcu_lobby_app = typer.Typer(name="lobby", no_args_is_help=True)
