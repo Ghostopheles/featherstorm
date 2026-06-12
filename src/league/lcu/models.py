@@ -2,11 +2,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum, Enum
 from typing import Optional
 
-from league.enums import MapQueueType
-
-class LCUMap(Enum):
-    SummonersRift = 11
-    HowlingAbyss = 12
+from league.enums import Queue, Map
 
 @dataclass
 class MyChampSelection:
@@ -334,19 +330,19 @@ class LCUMatch:
     gameModeMutators: list
     gameType: str
     gameVersion: str
-    mapId: LCUMap
+    mapId: Map
     participantIdentities: list[ParticipantIdentity]
     participants: list[Participant]
     platformId: str
-    queueId: MapQueueType
+    queueId: Queue
     seasonId: int
     teams: list[MatchTeam]
 
     def __post_init__(self):
         self.participantIdentities = [ParticipantIdentity(**p) for p in self.participantIdentities]
         self.participants = [Participant(**p) for p in self.participants]
-        self.mapId = LCUMap(self.mapId)
-        self.queueId = MapQueueType(self.queueId)
+        self.mapId = Map(self.mapId)
+        self.queueId = Queue(self.queueId)
         self.teams = [MatchTeam(**t) for t in self.teams]
 
 @dataclass
@@ -374,8 +370,8 @@ class LCUMatchHistory:
     def __post_init__(self):
         self.games = LCUGames(**self.games)
 
-    def get_matches_by_map_queue_type(self, map_queue_type: MapQueueType) -> list[LCUMatch]:
-        return [m for m in self.games.games if m.queueId == map_queue_type]
+    def get_matches_by_map_queue_type(self, queue_type: Queue) -> list[LCUMatch]:
+        return [m for m in self.games.games if m.queueId == queue_type]
 
 
 @dataclass

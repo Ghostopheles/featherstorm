@@ -125,6 +125,20 @@ name = "govee"
 version = "0.1.0"
 source = { editable = "../govee" }
 
+[package.metadata]
+requires-dist = [
+    { name = "rich", marker = "extra == 'cli'", specifier = ">=15.0.0" },
+    { name = "typer", marker = "extra == 'cli'", specifier = ">=0.25.1" },
+]
+provides-extras = ["cli"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8" },
+    { name = "pytest-asyncio", specifier = ">=0.24" },
+    { name = "ruff", specifier = ">=0.15.14" },
+]
+
 [[package]]
 name = "h11"
 version = "0.16.0"

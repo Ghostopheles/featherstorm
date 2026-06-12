@@ -2,7 +2,7 @@ import httpx
 
 from typing import Optional, Any, override
 
-from league.enums import QueueType, MapQueueType
+from league.enums import MatchType, Queue
 from league.http import BaseAPIClient
 from league.models import Match, MatchTimeline, PlayerMatch
 
@@ -35,10 +35,14 @@ class RiotAPIClient(BaseAPIClient):
         return await super().get(url, *args, **kwargs)
 
     async def get_rso_match_ids(
-        self, count: Optional[int] = 5, start_index: Optional[int] = 0, queue_type: Optional[QueueType] = QueueType.Ranked, start_time: Optional[int] = None
+        self,
+        count: Optional[int] = 5,
+        start_index: Optional[int] = 0,
+        match_type: Optional[MatchType] = MatchType.Ranked,
+        start_time: Optional[int] = None,
     ):
         endpoint = "/lol/rso-match/v1/matches/ids"
-        params = {"count": count, "start": start_index, "type": queue_type, "startTime": start_time}
+        params = {"count": count, "start": start_index, "type": match_type, "startTime": start_time}
         return await self.get(endpoint, params=params)
 
     async def get_puuid(self, game_name: str, tag_line: str) -> str | None:
@@ -62,16 +66,16 @@ class RiotAPIClient(BaseAPIClient):
         *,
         count: int = 20,
         start: int = 0,
-        match_type: Optional[QueueType] = None,
-        map_queue_type: Optional[MapQueueType] = None,
+        match_type: Optional[MatchType] = None,
+        queue_type: Optional[Queue] = None,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
     ) -> list[str]:
         params = {"count": count, "start": start}
         if match_type is not None:
             params["type"] = match_type
-        if map_queue_type is not None:
-            params["queue"] = map_queue_type.value
+        if queue_type is not None:
+            params["queue"] = queue_type.value
         if start_time is not None:
             params["startTime"] = start_time
         if end_time is not None:
@@ -94,10 +98,10 @@ class RiotAPIClient(BaseAPIClient):
             self,
             puuid: str,
             count: int = 3,
-            match_type: QueueType = QueueType.Normal,
-            map_queue_type: Optional[MapQueueType] = None,
+            match_type: MatchType = MatchType.Normal,
+            queue_type: Optional[Queue] = None,
         ) -> list[PlayerMatch]:
-        match_ids = await self.get_match_ids(puuid, count=count, match_type=match_type, map_queue_type=map_queue_type)
+        match_ids = await self.get_match_ids(puuid, count=count, match_type=match_type, queue_type=queue_type)
         if not match_ids:
             return None
 

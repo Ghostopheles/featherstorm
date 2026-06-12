@@ -16,7 +16,7 @@ import league.config as cfg
 from league.lcu.lcu import LCUClient, LCUMatch
 from league.lcu.exceptions import LCUMissingReplayMetadataException
 from league.models import PlayerMatch, TimelineEvent, MatchTimeline
-from league.enums import QueueType, MapQueueType
+from league.enums import MatchType, Queue
 from league.timeline import MatchTimelineAnalyzer, HighlightEvent
 from league.riot_api import RiotAPIClient
 from league.console import console, format_file_path
@@ -130,11 +130,11 @@ class HighlightManager:
     async def get_recent_riot_matches(
             self,
             count: int = 10,
-            match_type: Optional[QueueType] = QueueType.Normal,
-            map_queue_type: Optional[MapQueueType] = None,
+            match_type: Optional[MatchType] = MatchType.Normal,
+            queue_type: Optional[Queue] = None,
         ) -> list[PlayerMatch]:
         if self.__matches is None:
-            self.__matches = await self.riot.get_recent_matches(self.puuid, count=count, match_type=match_type, map_queue_type=map_queue_type)
+            self.__matches = await self.riot.get_recent_matches(self.puuid, count=count, match_type=match_type, queue_type=queue_type)
             self.__match_cache = {match.matchId: match for match in self.__matches}
 
         return self.__matches
@@ -142,20 +142,20 @@ class HighlightManager:
     async def get_recent_matches(
         self,
         count: int = 10,
-        map_queue_type: Optional[MapQueueType] = None,
+        queue_type: Optional[Queue] = None,
     ) -> list[LCUMatch]:
         if self.__matches is None or len(self.__matches) != count:
-            self.__matches = await self.lcu.get_match_history(count=count, map_queue_type=map_queue_type)
+            self.__matches = await self.lcu.get_match_history(count=count, queue_type=queue_type)
             self.__match_cache = {match.matchId: match for match in self.__matches}
 
         return self.__matches
 
-    async def get_last_match(self, map_queue_type: Optional[MapQueueType] = None) -> PlayerMatch:
-        matches = await self.get_recent_matches(count=1, map_queue_type=map_queue_type)
+    async def get_last_match(self, queue_type: Optional[Queue] = None) -> PlayerMatch:
+        matches = await self.get_recent_matches(count=1, queue_type=queue_type)
         return matches[0]
 
-    async def get_last_match_id(self, map_queue_type: Optional[MapQueueType] = None) -> str:
-        match = await self.get_last_match(map_queue_type=map_queue_type)
+    async def get_last_match_id(self, queue_type: Optional[Queue] = None) -> str:
+        match = await self.get_last_match(queue_type=queue_type)
         return match.matchId
 
     async def get_timeline_for_match(self, matchID: str) -> MatchTimeline:

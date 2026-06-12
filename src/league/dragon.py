@@ -47,16 +47,14 @@ class CommunityDataDragon(BaseAPIClient):
     def _check_champion_cache(self, championID: int) -> Optional[dict]:
         path = DRAGON_PATH / "champion" / f"{championID}.json"
         if path.exists():
-            with open(path) as f:
-                data = json.load(f)
-            return data
+            return json.loads(path.read_text())
         else:
             return None
 
     def _write_to_champion_cache(self, championID: int, data: dict):
         path = DRAGON_PATH / "champion" / f"{championID}.json"
-        with open(path, "w") as f:
-            json.dump(data, f, indent=4)
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(json.dumps(data, indent=4))
 
     def _check_item_cache(self, itemID: int) -> Optional[dict]:
         path = DRAGON_PATH / "item" / f"{itemID}.json"

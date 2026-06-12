@@ -43,6 +43,9 @@ console.set_window_title("Featherstorm")
 def print(*args, **kwargs):
     return console.print(*args, **kwargs)
 
+def print_json(*args, **kwargs):
+    return console.print_json(*args, **kwargs)
+
 def get_printer(prefix: str) -> Callable[[Any], None]:
     def _print(*args, **kwargs):
         console.print(prefix, *args, **kwargs)

@@ -4,8 +4,9 @@ import typer
 import asyncio
 
 from pathlib import Path
-from typing import Optional
+from dataclasses import asdict
 from dotenv import load_dotenv
+from typing import Optional, Annotated
 
 from rich import box
 from rich.table import Table
@@ -13,15 +14,15 @@ from rich.align import Align
 
 from league import config
 from league.lcu import LCUClient
-from league.lcu.models import LCUMap, LCULane, LCURole, LCUPosition
-from league.enums import QueueType, MapQueueType, MapQueueTypeName
+from league.lcu.models import LCUPosition
 from league.constants import APP_NAME
 from league.riot_api import RiotAPIClient
 from league.companion import run_companion
 from league.dragon import CommunityDataDragon
 from league.highlights import HighlightManager
 from league.timeline import render_player_timeline
-from league.console import print, console, format_file_path
+from league.console import print, console, format_file_path, print_json
+from league.enums import MatchTypeChoice, QueueChoice, resolve_queue, resolve_queue_name, resolve_match_type
 
 config.init()
 
@@ -65,20 +66,17 @@ def lcu_summoner(client_install_path: Optional[Path] = default_client_path):
 def lcu_matches(
     client_install_path: Optional[Path] = default_client_path,
     count: int = 5,
-    map_queue_type: Optional[MapQueueTypeName] = None
+    queue_type: Annotated[QueueChoice, typer.Option(help="Queue Type", case_sensitive=False)] = None
 ):
     client = LCUClient(client_install_path=client_install_path)
     dragon = CommunityDataDragon()
 
-    if map_queue_type is not None:
-        if isinstance(map_queue_type, str):
-            map_queue_type = MapQueueType[map_queue_type]
-        elif isinstance(map_queue_type, int):
-            map_queue_type = MapQueueType(map_queue_type)
+    if queue_type is not None:
+        queue_type = resolve_queue(queue_type)
 
     async def run():
         with console.status("[eminence]Processing matches...[/]", spinner="simpleDotsScrolling", spinner_style="featherstorm"):
-            matches = await client.get_match_history(count=count, map_queue_type=map_queue_type)
+            matches = await client.get_match_history(count=count, queue_type=queue_type)
             if not matches:
                 print("No matches found.")
                 return
@@ -142,7 +140,7 @@ def lcu_matches(
                 kda_right = f"{player.stats.kills}/{player.stats.deaths}/{player.stats.assists}"
                 kda_str = f"KDA {kda_left} : {kda_right}"
 
-                queue_name = split_camel(MapQueueType(match.queueId).name)
+                queue_name = resolve_queue_name(match.queueId)
 
                 player_champion = await dragon.get_champion(player.championId)
                 player_champion_name = player_champion.get("name")
@@ -161,19 +159,25 @@ def lcu_matches(
 @lcu_app.command(name="last", help="Fetch last match from LCU")
 def lcu_last_match(
     client_install_path: Optional[Path] = default_client_path,
-    map_queue_type: Optional[MapQueueTypeName] = None,
-    filter: Optional[str] = None
+    queue_type: Annotated[QueueChoice, typer.Option(help="Queue Type", case_sensitive=False)] = None,
+    filter: Annotated[str, typer.Option(help="Key to filter by when printing the match data")] = None,
+    json: Annotated[bool, typer.Option(help="Return the match as JSON")] = False
 ):
     client = LCUClient(client_install_path=client_install_path)
 
-    if map_queue_type is not None:
-        map_queue_type = MapQueueType[map_queue_type]
+    if queue_type is not None:
+        queue_type = resolve_queue(queue_type)
 
-    match = asyncio.run(client.get_last_match(map_queue_type=map_queue_type))
+    match = asyncio.run(client.get_last_match(queue_type=queue_type))
     if filter is not None:
-        print(getattr(match, filter))
+        out = getattr(match, filter)
     else:
-        print(match)
+        out = match
+
+    if json:
+        print_json(data=asdict(out))
+    else:
+        print(out)
 
 lcu_champselect_app = typer.Typer(name="champ-select", no_args_is_help=True)
 lcu_app.add_typer(lcu_champselect_app)
@@ -259,14 +263,14 @@ def riot_matches(
     game_name: str = config.get("companion.default_player_name"),
     tag_line: str = config.get("companion.default_player_tagline"),
     count: int = 5,
-    match_type: Optional[QueueType] = None,
-    map_queue_type: Optional[MapQueueTypeName] = None
+    match_type: Annotated[MatchTypeChoice, typer.Option(help="Match Type", case_sensitive=False)] = None,
+    queue_type: Annotated[QueueChoice, typer.Option(help="Queue Type", case_sensitive=False)] = None,
 ):
-    if map_queue_type is not None:
-        if isinstance(map_queue_type, str):
-            map_queue_type = MapQueueType[map_queue_type]
-        elif isinstance(map_queue_type, int):
-            map_queue_type = MapQueueType(map_queue_type)
+    if match_type is not None:
+        match_type = resolve_match_type(match_type)
+
+    if queue_type is not None:
+        queue_type = resolve_queue(queue_type)
 
     async def run():
         with console.status("[eminence]Processing matches...[/]", spinner="simpleDotsScrolling", spinner_style="featherstorm"):
@@ -275,7 +279,7 @@ def riot_matches(
             if not puuid:
                 print(f"[bold red]Player {game_name}#{tag_line} not found[/bold red]")
                 return
-            matches = await client.get_match_ids(puuid, count=count, match_type=match_type, map_queue_type=map_queue_type)
+            matches = await client.get_match_ids(puuid, count=count, match_type=match_type, queue_type=queue_type)
             if not matches:
                 print("No matches found.")
                 return
@@ -402,15 +406,13 @@ def capture_highlights(
     name: Optional[str] = config.get("companion.default_player_name"),
     tagline: Optional[str] = config.get("companion.default_player_tagline"),
     count: Optional[int] = 2,
-    map_queue_type: Optional[MapQueueTypeName] = None
+    queue_type: Annotated[QueueChoice, typer.Option(help="Queue Type", case_sensitive=False)] = None,
 ):
     load_dotenv()
     api_key = os.getenv("RIOT_API_KEY")
 
-    if map_queue_type is not None:
-        map_queue_type = MapQueueType[map_queue_type]
-
-    print(map_queue_type.name, map_queue_type.value)
+    if queue_type is not None:
+        queue_type = resolve_queue(queue_type)
 
     if game_path is None:
         path, was_input = try_get_cfg_or_input("lcu", "client_install_path", "League of Legends install path")
@@ -434,7 +436,7 @@ def capture_highlights(
 
     async def run():
         highlights = await HighlightManager.create(name, tagline, game_path, export_path, api_key)
-        last_match_id = await highlights.get_last_match_id(map_queue_type)
+        last_match_id = await highlights.get_last_match_id(queue_type)
         await highlights.capture_highlights_for_match(last_match_id, numHighlights=count)
 
     asyncio.run(run())

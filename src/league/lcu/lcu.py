@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from league.http import BaseAPIClient
 from league.dragon import DataDragon
-from league.enums import MapQueueType
+from league.enums import Queue
 from league.console import print
 from league.lcu.models import *
 from league.lcu.socket import LCUWebsocketClient, LCUWebsocketEventCallback
@@ -108,14 +108,14 @@ class LCUClient(BaseAPIClient):
 
     async def create_custom_game_lobby(self, game_mode: Optional[LobbyGameMode] = LobbyGameMode.Practice, **kwargs):
         lobby_config = {
-            "queueId": MapQueueType.PracticeTool,
+            "queueId": Queue.PRACTICE,
             "customGameLobby": {
                 "configuration": {
                     "gameMode": game_mode,
                     "gameMutator": "",
                     "mutators": {"id": 1},
                     "gameServerRegion": "",
-                    "mapId": LCUMap.SummonersRift,
+                    "mapId": Map.SUMMONER_S_RIFT_3,
                     "spectatorPolicy": "AllAllowed",
                     "teamSize": 5,
                     "maxPlayerCount": 10,
@@ -131,14 +131,14 @@ class LCUClient(BaseAPIClient):
         res = await self.post("/lol-lobby/v2/lobby", json=lobby_config)
         return res
 
-    async def create_normal_game_lobby(self, queueID: Optional[MapQueueType] = MapQueueType.DraftPick, **kwargs):
+    async def create_normal_game_lobby(self, queueID: Optional[Queue] = Queue.Q_5V5_DRAFT_PICK_GAMES_2, **kwargs):
         """Non-functional right now"""
         lobby_config = {
             "queueId": queueID,
             "customGameLobby": {
                 "configuration": {
                     "gameMode": LobbyGameMode.Normal,
-                    "mapId": LCUMap.SummonersRift,
+                    "mapId": Map.SUMMONER_S_RIFT_3,
                 }
             },
         }
@@ -163,7 +163,7 @@ class LCUClient(BaseAPIClient):
         start_index: int = 0,
         end_index: Optional[int] = None,
         count: Optional[int] = None,
-        map_queue_type: Optional[MapQueueType] = None,
+        queue_type: Optional[Queue] = None,
     ) -> LCUMatchHistory:
         if end_index is None:
             end_index = start_index + count
@@ -175,8 +175,8 @@ class LCUClient(BaseAPIClient):
         res = await self.get("/lol-match-history/v1/products/lol/current-summoner/matches", params=params)
 
         history = LCUMatchHistory(**res)
-        if map_queue_type is not None:
-            filtered = history.get_matches_by_map_queue_type(map_queue_type)
+        if queue_type is not None:
+            filtered = history.get_matches_by_queue_type(queue_type)
             history.games.update_games(filtered)
 
         return history
@@ -185,12 +185,12 @@ class LCUClient(BaseAPIClient):
         history = await self.get_match_history()
         return [g.gameId for g in history.games.games]
 
-    async def get_last_match(self, map_queue_type: Optional[MapQueueType] = None) -> LCUMatch:
-        history = await self.get_match_history(count=1, map_queue_type=map_queue_type)
+    async def get_last_match(self, queue_type: Optional[Queue] = None) -> LCUMatch:
+        history = await self.get_match_history(count=1, queue_type=queue_type)
         return history.games.games[0]
 
-    async def get_last_match_id(self, map_queue_type: Optional[MapQueueType] = None) -> int:
-        last_match = await self.get_last_match(map_queue_type=map_queue_type)
+    async def get_last_match_id(self, queue_type: Optional[Queue] = None) -> int:
+        last_match = await self.get_last_match(queue_type=queue_type)
         return last_match.gameId
 
     async def get_match_timeline(self, matchID: int) -> LCUTimeline:
