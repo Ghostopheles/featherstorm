@@ -285,7 +285,7 @@ def riot_matches(
                 return
 
             match_table = Table(
-                title=f"({count} most recent matches for {game_name}#{tag_line})",
+                title=f"({count} most recent matches for [rakan]{game_name}[/][dim]#[/][rakan]{tag_line}[/])",
                 show_header=True,
                 border_style="rakan",
                 header_style="featherstorm",
@@ -298,6 +298,7 @@ def riot_matches(
             match_table.add_column("KDA Ratio : K/D/A", width=20)
             match_table.add_column("Duration", width=8, highlight=True)
             match_table.add_column("Game Mode", width=10)
+            match_table.add_column("Queue Type", width=14)
             match_table.add_column("Match ID", width=15)
 
             for i, match_id in enumerate(matches, 1):
@@ -322,7 +323,8 @@ def riot_matches(
                     kda_right = f"{player.kills}/{player.deaths}/{player.assists}"
                     kda_str = f"KDA {kda_left} : {kda_right}"
 
-                    match_table.add_row(f"{i}", player.championName, result, kda_str, f"[green]{mins}[/]m", match.info.gameMode, match.metadata.matchId, style=row_style)
+                    queue_type_name = resolve_queue_name(match.info.queueId)
+                    match_table.add_row(f"{i}", player.championName, result, kda_str, f"[green]{mins}[/]m", match.info.gameMode, f"{queue_type_name}", match.metadata.matchId, style=row_style)
                 else:
                     print(f"{i}. {match.metadata.matchId}")
 

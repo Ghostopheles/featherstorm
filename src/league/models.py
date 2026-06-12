@@ -3,7 +3,7 @@ from typing import Optional
 from dataclasses import dataclass, field
 from pydantic import BaseModel, model_validator
 
-from league.enums import GameEventType, GameResult, GameTeam
+from league.enums import GameEventType, GameResult, GameTeam, Queue, Map
 
 
 def cast_to_enum(value, enum: Enum):
@@ -487,8 +487,8 @@ class MatchInfo(BaseModel):
     gameDuration: int
     gameMode: str
     gameVersion: str
-    mapId: int
-    queueId: int
+    mapId: Map
+    queueId: Queue
     platformId: str
     participants: list[ParticipantSummary]
     teams: list[TeamSummary]
@@ -650,8 +650,8 @@ class PlayerMatch(BaseModel):
     gameDuration: int
     gameMode: str
     gameVersion: str
-    mapId: int
-    queueId: int
+    mapId: Map
+    queueId: Queue
     teams: list[TeamSummary]
     player: ParticipantSummary
     teammates: list[ParticipantSummary]
