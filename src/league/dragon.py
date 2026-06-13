@@ -94,10 +94,11 @@ class DataDragon(BaseAPIClient):
         return self._champion_lookup
 
     async def get_item(self, itemID: int) -> Optional[DragonItem]:
-        data = self._item_cache.read()
+        data = self._item_cache.read_json(f"{itemID}.json")
         if data is None:
             res = await self.get(f"data/{self.locale}/item.json")
             all_items: dict = res.get("data")
+            self._item_cache.write(all_items)
 
             for id_str, item in all_items.items():
                 filename = f"{id_str}.json"
