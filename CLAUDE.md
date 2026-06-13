@@ -32,7 +32,15 @@ league-of-snakes/
 │   ├── timeline.py       # MatchTimelineAnalyzer, HighlightEvent, ParticipantPositionTrack (Riot API match timeline → highlights)
 │   ├── highlights.py     # HighlightManager (replay download, open replay client, OBS-style recording of clip ranges)
 │   ├── watcher.py        # MatchWatcher (session lifecycle, reconnect logic, event routing)
-│   ├── cli.py            # Typer CLI app — primary entry point (featherstorm)
+│   ├── cli/              # Typer CLI package — primary entry point (featherstorm)
+│   │   ├── __init__.py   # runs config.init(), re-exports `app` (keeps league.cli:app entry point)
+│   │   ├── main.py       # root app: callback + `companion` command, add_typer each group
+│   │   ├── _shared.py    # try_get_cfg_or_input(), default_client_path, _riot_client()
+│   │   ├── lcu.py        # lcu_app (+ nested champ-select, lobby apps)
+│   │   ├── cfg.py        # cfg_app
+│   │   ├── riot.py       # riot_app
+│   │   ├── highlights.py # highlights_app
+│   │   └── dragon.py     # dragon_app
 │   ├── screens/
 │   │   ├── __init__.py
 │   │   └── champselect.py  # Champ select TUI screen (WIP — rich Layout/Panel, PlayerCard, Header/Footer)

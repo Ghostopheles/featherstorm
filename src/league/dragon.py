@@ -1,6 +1,4 @@
-import json
 import httpx
-import shutil
 
 from PIL import Image
 from io import BytesIO
