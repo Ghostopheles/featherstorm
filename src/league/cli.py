@@ -18,7 +18,7 @@ from league.lcu.models import LCUPosition
 from league.constants import APP_NAME
 from league.riot_api import RiotAPIClient
 from league.companion import run_companion
-from league.dragon import CommunityDataDragon
+from league.dragon import DataDragon
 from league.highlights import HighlightManager
 from league.timeline import render_player_timeline
 from league.console import print, console, format_file_path, print_json
@@ -69,7 +69,7 @@ def lcu_matches(
     queue_type: Annotated[QueueChoice, typer.Option(help="Queue Type", case_sensitive=False)] = None
 ):
     client = LCUClient(client_install_path=client_install_path)
-    dragon = CommunityDataDragon()
+    dragon = DataDragon()
 
     if queue_type is not None:
         queue_type = resolve_queue(queue_type)
@@ -448,16 +448,29 @@ dragon_app = typer.Typer(name="dragon", no_args_is_help=True, help="rawr")
 app.add_typer(dragon_app)
 
 
-@dragon_app.command(name="item", help="Get item info by ID.")
+@dragon_app.command(name="item", help="Get item info by ID")
 def dragon_item(item_id: int):
     async def run():
-        dragon = CommunityDataDragon()
+        dragon = DataDragon()
         await dragon.initialize()
         item = await dragon.get_item(item_id)
         if item is None:
             print(f"[bold red]Item {item_id} not found[/bold red]")
             return
         print(item)
+
+    asyncio.run(run())
+
+@dragon_app.command(name="champion", help="Get champion info by ID")
+def dragon_champion(champion_id: int):
+    async def run():
+        dragon = DataDragon()
+        await dragon.initialize()
+        champion = await dragon.get_champion(champion_id)
+        if champion is None:
+            print(f"[bold red]Champion {champion_id} not found[/bold red]")
+            return
+        print(champion)
 
     asyncio.run(run())
 
