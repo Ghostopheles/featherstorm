@@ -127,7 +127,7 @@ class HighlightManager:
 
         return self.__match_cache.get(matchID)
 
-    async def get_recent_riot_matches(
+    async def get_recent_matches(
             self,
             count: int = 10,
             match_type: Optional[MatchType] = MatchType.Normal,
@@ -139,7 +139,7 @@ class HighlightManager:
 
         return self.__matches
 
-    async def get_recent_matches(
+    async def get_recent_lcu_matches(
         self,
         count: int = 10,
         queue_type: Optional[Queue] = None,

@@ -18,7 +18,8 @@ class BaseAPIClient:
             try:
                 return res.json()
             except json.decoder.JSONDecodeError:
-                log_error(f"[error]JSON decode error from {format_url(res.request.url)}[/]")
+                if res.status_code != 204:
+                    log_error(f"[error]JSON decode error from {format_url(res.request.url)}[/]")
                 return None
         except httpx.HTTPStatusError as e:
             log_error(f"[error]HTTP Status Error ({e.response.status_code}) from {format_url(e.request.url)}[/]: {str(e)}", show_locals=False, show_traceback=False)
