@@ -2,18 +2,13 @@ from typing import Optional
 from bisect import bisect_left
 from dataclasses import dataclass, field
 
-from rich.box import SIMPLE
 from rich.text import Text
 from rich.panel import Panel
 from rich.table import Table
 from rich.console import Group, RenderableType
 
-from league.enums import ReplaySequenceEasing
 from league.models import (
-    TimelineFrame,
     TimelineEvent,
-    TimelineInfo,
-    TimelineParticipant,
     MatchTimeline,
     PositionDto,
 )

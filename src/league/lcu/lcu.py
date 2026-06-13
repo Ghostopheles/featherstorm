@@ -5,11 +5,12 @@ from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass
 
-from league.http import BaseAPIClient
-from league.dragon import DataDragon
 from league.enums import Queue
-from league.console import print
 from league.lcu.models import *
+from league.console import print
+from league.dragon import DataDragon
+from league.http import BaseAPIClient
+
 from league.lcu.socket import LCUWebsocketClient, LCUWebsocketEventCallback
 from league.lcu.exceptions import LCUMissingReplayMetadataException, LCUIncompatibleReplayException
 

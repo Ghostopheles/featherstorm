@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Optional
+from pydantic import BaseModel
 from dataclasses import dataclass, field
-from pydantic import BaseModel, model_validator
 
 from league.enums import GameEventType, GameResult, GameTeam, Queue, Map
 

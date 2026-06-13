@@ -2,8 +2,8 @@ import httpx
 
 from typing import Optional, Any, override
 
-from league.enums import MatchType, Queue
 from league.http import BaseAPIClient
+from league.enums import MatchType, Queue
 from league.models import Match, MatchTimeline, PlayerMatch
 
 LANGUAGE = "en_US"

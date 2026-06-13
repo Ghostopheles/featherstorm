@@ -1,6 +1,6 @@
-from dataclasses import dataclass, field
-from enum import StrEnum, Enum
 from typing import Optional
+from enum import StrEnum, Enum
+from dataclasses import dataclass, field
 
 from league.enums import Queue, Map
 
