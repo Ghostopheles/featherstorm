@@ -128,9 +128,11 @@ League Live Client API (127.0.0.1:2999)
         └── _poll_session()       ← calls LeagueClient.poll_events() every 250ms
                 │
                 ▼
-        LeagueClient.on_event()  ← dispatches to registered callbacks (api.py)
+        LeagueClient.on_event()  ← builds GameEvent, appends history, fires callbacks (api.py)
                 │
-                ├── on_game_start / on_champion_kill / on_turret_killed / ...
+                ├── companion callbacks registered via watcher.on(...) (companion.py)
+                │      ├── lighting (on_game_start / on_champion_kill / ...)
+                │      └── console kill-feed (register_event_feed)
                 │
                 ├── ChromaSession  (Razer Chroma SDK via chroma package)
                 │
@@ -139,7 +141,7 @@ League Live Client API (127.0.0.1:2999)
 
 ### Key Classes
 
-- **`LeagueClient`** ([league/api.py](league/api.py)) — polls League Live Client API, fires typed event handlers, dispatches registered callbacks. Tracks `last_event_count` for new events only.
+- **`LeagueClient`** ([league/api.py](league/api.py)) — polls League Live Client API; `on_event()` builds a `GameEvent`, appends to `_history`, and dispatches to callbacks registered via `on(event_type, cb)`. No built-in per-event handlers (lighting + console feed live in companion). Tracks `last_event_count` for new events only.
   - `get_active_player()` → `Optional[ActivePlayer]` — returns `None` on HTTP error or spectator mode (API returns `{"error": "..."}` with 200 status in spectator).
   - `get_active_player_team()` → `Optional[GameTeam]` — returns `None` in spectator mode.
   - `get_all_game_data()` → `AllGameData` — full snapshot; `allPlayers` always populated, `activePlayer` is `None` in spectator mode.
@@ -190,7 +192,7 @@ All Chroma effects created at startup via `setup_chroma_effects()` in [league/co
 ### Adding a New Event Handler
 
 - Add event to `GameEventType` in [league/enums.py](league/enums.py) if missing. Value must be exact string Live Client API returns.
-- Add `case GameEventType.<New>:` branch in `LeagueClient.on_event()` + corresponding `on_<new>()` method in [league/api.py](league/api.py).
+- Register a callback via `watcher.on(GameEventType.<New>, cb)` in `run_companion` ([league/companion.py](src/league/companion.py)) for lighting. For console kill-feed output, add a handler + `watcher.on(...)` line in `register_event_feed` ([league/companion.py](src/league/companion.py)).
 
 ## LCU Client
 
