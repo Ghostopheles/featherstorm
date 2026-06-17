@@ -9,7 +9,18 @@ from typing import Optional, Annotated
 from league import config
 from league.timeline import render_player_timeline
 from league.console import print, console
-from league.enums import MatchTypeChoice, QueueChoice, resolve_queue, resolve_queue_name, resolve_match_type
+from league.enums import (
+    RankedQueueTypeChoice,
+    RankedDivision,
+    RankedTier,
+    RANKED_QUEUE_TYPE_MAP,
+    MatchTypeChoice,
+    QueueChoice,
+    resolve_queue,
+    resolve_queue_name,
+    resolve_match_type
+)
+from league.models import LeagueEntry
 
 from league.cli._shared import _riot_client
 
@@ -163,5 +174,70 @@ def riot_timeline(
                 bar_width=max(60, console.width - 4),
             )
         )
+
+    asyncio.run(run())
+
+@app.command(name="ranked")
+def riot_ranked_data(
+    queue: Annotated[RankedQueueTypeChoice, typer.Argument(case_sensitive=False, help="Ranked queue type")],
+    tier: Annotated[RankedTier, typer.Argument(case_sensitive=False, help="Ranked tier")],
+    division: Annotated[RankedDivision, typer.Argument(case_sensitive=False, help="Ranked division within tier")],
+):
+    client = _riot_client()
+    real_queue = RANKED_QUEUE_TYPE_MAP[queue]
+
+    async def run():
+        data = await client.get_ranked_data(real_queue, tier, division)
+        puuids = [e.puuid for e in data]
+
+        with console.status("Loading players...", spinner="simpleDotsScrolling", spinner_style="featherstorm"):
+            accounts = await client.get_many_accounts(puuids)
+
+        accounts = {
+            a.puuid: a for a in accounts
+        }
+
+        title = f"[green]{queue.value}[/] Ranked Ladder - {tier} {division}"
+
+        table = Table(
+            title=title,
+            show_header=True,
+            border_style="rakan",
+            header_style="featherstorm",
+            box=box.ROUNDED,
+            show_lines=True
+        )
+        table.add_column("#", width=3)
+        table.add_column("Name", width=30)
+        table.add_column("Record", width=11, justify="center")
+        table.add_column("Winrate", width=7, justify="center")
+        table.add_column("LP", width=5)
+
+        for i, entry in enumerate(data, 1):
+            name = None
+            account = accounts.get(entry.puuid)
+            if account and account.gameName:
+                name = f"{account.gameName}[dim]#{account.tagLine}[/]"
+
+            if name is None:
+                name = "N/A"
+
+            win_loss_str = f"{entry.wins}[green]W[/] : {entry.losses}[red]L[/]"
+            total_games = entry.wins + entry.losses
+            winrate = int((entry.wins / total_games) * 100)
+            if winrate < 50:
+                winrate_str = f"[red]{winrate}[/]%"
+            else:
+                winrate_str = f"[green]{winrate}[/]%"
+
+            table.add_row(
+                f"{i}",
+                name,
+                win_loss_str,
+                winrate_str,
+                f"{entry.leaguePoints} LP",
+            )
+
+        print(table)
 
     asyncio.run(run())

@@ -1,10 +1,15 @@
 import httpx
+import asyncio
 
+from pathlib import Path
 from typing import Optional, Any, override
 
-from league.http import BaseAPIClient
-from league.enums import MatchType, Queue
-from league.models import Match, MatchTimeline, PlayerMatch
+import league.config as cfg
+
+from league.cache import DataCache
+from league.http import BaseAPIClient, RiotRateLimiter
+from league.enums import MatchType, Queue, RankedQueueType, RankedTier, RankedDivision
+from league.models import Match, MatchTimeline, PlayerMatch, LeagueEntry, RiotAccount
 
 LANGUAGE = "en_US"
 RIOT_REGION = "americas"
@@ -23,10 +28,14 @@ def get_region_for_url(url: str):
 
 
 class RiotAPIClient(BaseAPIClient):
+    _cache_init: bool = False
+    _account_cache: DataCache | None = None
+
     def __init__(self, api_key: str):
         headers = {"X-Riot-Token": api_key, "Content-Type": "application/json"}
 
         self.client = httpx.AsyncClient(http2=True, headers=headers)
+        self._cache_init = False
 
     @override
     async def get(self, endpoint, *args, **kwargs):
@@ -34,16 +43,78 @@ class RiotAPIClient(BaseAPIClient):
         url = RIOT_API_BASE_URL.format(region=region) + endpoint
         return await super().get(url, *args, **kwargs)
 
-    async def get_rso_match_ids(
-        self,
-        count: Optional[int] = 5,
-        start_index: Optional[int] = 0,
-        match_type: Optional[MatchType] = MatchType.Ranked,
-        start_time: Optional[int] = None,
-    ):
-        endpoint = "/lol/rso-match/v1/matches/ids"
-        params = {"count": count, "start": start_index, "type": match_type, "startTime": start_time}
-        return await self.get(endpoint, params=params)
+    async def _init_account_cache(self):
+        if self._cache_init:
+            return
+
+        cache_dir = Path(cfg.get_str("cache_dir", "meta", "./data"))
+        cache_path = cache_dir / "riot"
+        cache_path.mkdir(parents=True, exist_ok=True)
+
+        self._account_cache = DataCache(cache_path, default_name="accounts.json")
+
+        self._cache_init = True
+
+    async def get_account(self, puuid: str, force_update: bool = False) -> Optional[RiotAccount]:
+        await self._init_account_cache()
+        all_data = self._account_cache.read()
+        if all_data is None:
+            all_data = {}
+
+        data = None
+        if puuid in all_data and not force_update:
+            data = all_data[puuid]
+        else:
+            data = await self.get(f"/riot/account/v1/accounts/by-puuid/{puuid}")
+            if data:
+                all_data[puuid] = data
+                self._account_cache.write(all_data)
+
+        return RiotAccount(**data)
+
+    async def get_many_accounts(self, puuids: list[str]) -> list[RiotAccount]:
+        await self._init_account_cache()
+
+        limiter = RiotRateLimiter()
+        sem = asyncio.Semaphore(20)
+
+        endpoint = "/riot/account/v1/accounts/by-puuid/{puuid}"
+        region = get_region_for_url(endpoint)
+        base_url = RIOT_API_BASE_URL.format(region=region)
+
+        cache = self._account_cache.read()
+        if cache is None:
+            cache = {}
+
+        async def fetch(puuid: str):
+            if data := cache.get(puuid):
+                return data
+
+            async with sem:
+                while True:
+                    await limiter.acquire()
+                    url = base_url + endpoint.format(puuid=puuid)
+                    res = await self.client.get(url)
+                    limiter.update(res.headers)
+
+                    if res.status_code == 429:
+                        retry_after = float(res.headers.get("Retry-After", "1"))
+                        await asyncio.sleep(retry_after)
+                        continue
+
+                    res.raise_for_status()
+
+                    data = res.json()
+                    return data
+
+        data = await asyncio.gather(*(fetch(id) for id in puuids))
+        accounts = []
+        for entry in data:
+            cache[entry.get("puuid")] = entry
+            accounts.append(RiotAccount(**entry))
+
+        self._account_cache.write(data)
+        return accounts
 
     async def get_puuid(self, game_name: str, tag_line: str) -> str | None:
         endpoint = f"/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
@@ -116,3 +187,15 @@ class RiotAPIClient(BaseAPIClient):
         """Returns the URLs to download the .rofl replay files for (up to) the user's last 5 games"""
         data = await self.get(f"/lol/match/v5/matches/by-puuid/{puuid}/replays")
         return data
+
+    async def get_ranked_data(
+        self,
+        queue: RankedQueueType,
+        tier: RankedTier,
+        division: RankedDivision,
+        page: int = 1
+    ) -> set[LeagueEntry]:
+        params = {"page": page}
+        data = await self.get(f"/lol/league/v4/entries/{queue.value}/{tier.value.upper()}/{division.value}", params=params)
+        if data is not None:
+            return [LeagueEntry(**entry) for entry in data]

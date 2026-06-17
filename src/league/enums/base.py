@@ -77,3 +77,37 @@ class ReplaySequenceEasing(StrEnum):
     BOUNCE_EASE_IN = "bounceEaseIn"
     BOUNCE_EASE_OUT = "bounceEaseOut"
     BOUNCE_EASE_IN_OUT = "bounceEaseInOut"
+
+class RankedQueueType(Enum):
+    RANKED_SOLO_5x5 = "RANKED_SOLO_5x5"
+    RANKED_TFT = "RANKED_TFT"
+    RANKED_FLEX_SR = "RANKED_FLEX_SR"
+
+class RankedQueueTypeChoice(StrEnum):
+    Solo = "Solo"
+    TFT = "TFT"
+    Flex = "Flex"
+
+RANKED_QUEUE_TYPE_MAP = {
+    RankedQueueTypeChoice.Solo: RankedQueueType.RANKED_SOLO_5x5,
+    RankedQueueTypeChoice.TFT: RankedQueueType.RANKED_TFT,
+    RankedQueueTypeChoice.Flex: RankedQueueType.RANKED_FLEX_SR,
+}
+
+class RankedTier(StrEnum):
+    Challenger = "Challenger"
+    Grandmaster = "Grandmaster"
+    Master = "Master"
+    Diamond = "Diamond"
+    Emerald = "Emerald"
+    Platinum = "Platinum"
+    Gold = "Gold"
+    Silver = "Silver"
+    Bronze = "Bronze"
+    Iron = "Iron"
+
+class RankedDivision(Enum):
+    I = "I"
+    II = "II"
+    III = "III"
+    IV = "IV"

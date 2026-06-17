@@ -3,7 +3,7 @@ from typing import Optional
 from pydantic import BaseModel
 from dataclasses import dataclass, field
 
-from league.enums import GameEventType, GameResult, GameTeam, Queue, Map
+from league.enums import GameEventType, GameResult, GameTeam, Queue, Map, RankedQueueType, RankedTier, RankedDivision
 
 
 def cast_to_enum(value, enum: Enum):
@@ -12,6 +12,44 @@ def cast_to_enum(value, enum: Enum):
 
     return enum[value]
 
+@dataclass
+class LeagueEntryMiniSeries:
+    losses: int
+    progress: str
+    target: int
+    wins: int
+
+@dataclass
+class LeagueEntry:
+    puuid: str
+    queueType: RankedQueueType
+    tier: RankedTier
+    rank: RankedDivision
+    leaguePoints: int
+    wins: int
+    losses: int
+    hotStreak: bool
+    veteran: bool
+    freshBlood: bool
+    inactive: bool
+
+    leagueId: Optional[str] = None
+    summonerId: Optional[str] = None
+    miniSeries: Optional[LeagueEntryMiniSeries] = None
+
+    def __post_init__(self):
+        self.queueType = RankedQueueType(self.queueType)
+        self.tier = RankedTier(self.tier.title())
+        self.rank = RankedDivision(self.rank)
+
+        if self.miniSeries is not None:
+            self.miniSeries = LeagueEntryMiniSeries(**self.miniSeries)
+
+@dataclass
+class RiotAccount:
+    puuid: str
+    gameName: Optional[str] = None
+    tagLine: Optional[str] = None
 
 @dataclass
 class StatRune:
