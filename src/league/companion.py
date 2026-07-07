@@ -280,10 +280,6 @@ async def run_companion():
             killer = event.KillerName
             if killer == active_player_name:
                 asyncio.create_task(chroma.play_animation(effects.kill_flash[active_player_team], device))
-                data = await get_game_data()
-                player = next((p for p in data.allPlayers if p.riotIdGameName == killer), None)
-                if player is not None and presence is not None:
-                    await presence.update_score(player.scores)
             elif player_teams.get(killer) == active_player_team:
                 asyncio.create_task(chroma.play_animation(effects.teammate_kill_flash[active_player_team], device))
 

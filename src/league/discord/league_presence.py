@@ -49,11 +49,15 @@ class LeagueRichPresence:
 
         start = int(time.time())
 
+        active_player = next((p for p in game_data.allPlayers if p.riotIdGameName == self.active_player_name), None)
+
         champion = player_champions.get(game_data.activePlayer.riotIdGameName)
+        skin_id = active_player.skinID
         opponent = self.get_lane_opponent(game_data)
         details = f"Playing {champion} vs. {opponent}"
+        large_image = f"{champion.lower()}_{skin_id}"
 
-        self.presence.update_activity(details=details, start=start)
+        self.presence.update_activity(details=details, start=start, large_image=large_image)
 
         self.start_updates(get_game_data)
 
@@ -62,7 +66,7 @@ class LeagueRichPresence:
         if scores is None:
             return
 
-        state = f"K/D/A: {scores.kills}/{scores.deaths}/{scores.assists}"
+        state = f"K/D/A: {scores.kills} / {scores.deaths} / {scores.assists}"
         self.presence.update_activity(state=state)
         await self.presence.update()
 
