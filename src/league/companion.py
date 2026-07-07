@@ -326,4 +326,8 @@ async def run_companion():
 
         register_event_feed(watcher, format_player)
 
-        await watcher.run()
+        try:
+            await watcher.run()
+        finally:
+            if presence is not None:
+                await presence.close()

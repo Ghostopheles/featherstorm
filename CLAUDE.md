@@ -249,6 +249,7 @@ MATCH-V5 methods:
 - Live Client API only available during active game. `MatchWatcher` polls every `companion.wait_interval` (2s default) until connected, then every `companion.poll_interval` (0.25s default). No manual restart between games.
 - Govee toggled via `companion.govee_enabled` config key (default `False`), not a CLI flag.
 - `riot-root-cert.pem` renamed to `riotgames.pem` but no longer used — `LeagueClient` uses `verify=False`.
+- pypresence `AioPresence.close()` is sync and calls `loop.close()` on the running event loop — never call it. `DiscordRichPresence.close()` ([league/discord/presence.py](src/league/discord/presence.py)) closes the IPC pipe transport directly instead. `run_companion()` closes presence in a `finally` so Ctrl+C doesn't leave an unclosed proactor pipe transport (`ValueError: I/O operation on closed pipe` warning at exit).
 - Spectator mode: `/activeplayer` returns `{"error": "..."}` with HTTP 200 (not 4xx). Both `get_active_player()` and `AllGameData.__post_init__` guard against this, returning `None` for `activePlayer`.
 - `Player.runes` and `ActivePlayer.fullRunes` can be empty list `[]` in some game modes — both typed `Optional`, guarded with falsy check before construction.
 - `FirstBrick` events can have `TurretKilled = None` in some game modes — `on_first_brick` guards before calling `Turret.from_str()`.

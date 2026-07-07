@@ -1,3 +1,5 @@
+import asyncio
+
 from typing import Any
 from dataclasses import dataclass, asdict
 
@@ -56,8 +58,28 @@ class DiscordRichPresence:
         self.connected = True
 
     async def close(self):
-        await self.rpc.close()
+        # pypresence's AioPresence.close() is sync and closes the running event
+        # loop, so we close the IPC pipe ourselves instead.
         self.connected = False
+        writer = self.rpc.sock_writer
+        if writer is None:
+            return
+
+        try:
+            self.rpc.send_data(2, {"v": 1, "client_id": self.rpc.client_id})
+        except Exception:
+            pass
+
+        writer.close()
+        if hasattr(writer, "wait_closed"):
+            await writer.wait_closed()
+        else:
+            # on Windows the writer is a proactor pipe transport; give the
+            # loop a tick to run its connection_lost callback
+            await asyncio.sleep(0)
+
+        self.rpc.sock_writer = None
+        self.rpc.sock_reader = None
 
     def set_activity(self, activity: DiscordActivity):
         self.activity = activity

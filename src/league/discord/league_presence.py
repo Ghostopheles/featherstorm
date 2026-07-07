@@ -17,6 +17,7 @@ class LeagueRichPresence:
         )
         self.presence = DiscordRichPresence(client_id, activity=activity)
         self.dragon = DataDragon()
+        self._update_task = None
 
     async def _update_loop(self, get_game_data):
         while True:
@@ -111,6 +112,11 @@ class LeagueRichPresence:
         self.stop_updates()
         await self.presence.clear()
         await self.presence.close()
+
+    async def close(self):
+        self.stop_updates()
+        if self.presence.connected:
+            await self.presence.close()
 
     def get_score_for_active_player(self, game_data: AllGameData) -> Scores | None:
         active_player = next((p for p in game_data.allPlayers if p.riotIdGameName == self.active_player_name), None)
