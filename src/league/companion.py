@@ -18,7 +18,7 @@ from league.console import log, print
 from league.api import LeagueClient
 from league.watcher import MatchWatcher
 from league.models import GameEventType, GameTeam, GameEvent, GameResult, Turret
-
+from league.discord import LeagueRichPresence
 
 DATA_PATH = config.get("meta.cache_dir")
 
@@ -192,10 +192,20 @@ async def run_companion():
     govee = None
     enable_govee = config.get_or_set("companion.govee_enabled", default=False)
 
+    presence = None
+    enable_discord = config.get_or_set("discord.enable_rich_presence", default=True)
+
     log("Starting [featherstorm]Featherstorm[/] in companion mode...")
 
     if enable_govee:
         govee = await init_govee()
+
+    if enable_discord:
+        discord_client_id = config.get_or_set("discord.app_id")
+        presence = LeagueRichPresence(discord_client_id)
+
+    async def get_game_data():
+        return await client.get_all_game_data()
 
     async with ChromaSession(CHROMA_APP_INFO) as chroma:
         device = ChromaDevice.Keyboard
@@ -229,7 +239,7 @@ async def run_companion():
             active = await client.get_active_player()
             active_player_name = active.riotIdGameName if active else config.get_str("companion.default_player_name")
 
-            all_data = await client.get_all_game_data()
+            all_data = await get_game_data()
             for player in all_data.allPlayers:
                 player_teams[player.riotIdGameName] = player.team
                 player_champions[player.riotIdGameName] = player.championName
@@ -253,10 +263,27 @@ async def run_companion():
                     color = team_to_govee_color.get(player_team)
                     dev.set_color_and_temperature(color)
 
+            if presence is not None:
+                await presence.init_match(
+                    all_data,
+                    player_teams,
+                    player_champions,
+                    active_player_name,
+                    get_game_data
+                )
+
+        async def on_game_end(_: GameEvent):
+            if presence is not None:
+                await presence.end_match()
+
         async def on_champion_kill(event: GameEvent):
             killer = event.KillerName
             if killer == active_player_name:
                 asyncio.create_task(chroma.play_animation(effects.kill_flash[active_player_team], device))
+                data = await get_game_data()
+                player = next((p for p in data.allPlayers if p.riotIdGameName == killer), None)
+                if player is not None and presence is not None:
+                    await presence.update_score(player.scores)
             elif player_teams.get(killer) == active_player_team:
                 asyncio.create_task(chroma.play_animation(effects.teammate_kill_flash[active_player_team], device))
 
@@ -292,6 +319,7 @@ async def run_companion():
             log("League session ended.")
 
         watcher.on(GameEventType.GameStart, on_game_start)
+        watcher.on(GameEventType.GameEnd, on_game_end)
         watcher.on(GameEventType.ChampionKill, on_champion_kill)
         watcher.on(GameEventType.TurretKilled, on_turret_killed)
         watcher.on(GameEventType.FirstBrick, on_first_brick)
