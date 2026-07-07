@@ -266,3 +266,12 @@ class LCUClient(BaseAPIClient):
         except KeyError:
             print(f"[warning]Unable to find position for lane={lane}, role={role}[/]")
             return LCUPosition.Unknown
+
+    async def get_inventory(self):
+        return await self.get("/lol-game-data-inventory/v1/items/contentIds")
+
+    async def get_inventory_item(self, content_id: str):
+        return await self.get(f"/lol-game-data-inventory/v1/items/contentIds/{content_id}")
+
+    async def get_asset(self, endpoint: str):
+        return await self.get(endpoint, no_json=True)

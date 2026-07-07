@@ -457,3 +457,75 @@ class LCUReplayDownloadStatus(Enum):
     Failed = 3
     Downloading = 4
     NotStarted = 5
+
+@dataclass
+class LCUInventoryItemRarity:
+    rarity: int
+    region: str
+
+@dataclass
+class LCUInventoryItem:
+    chromaPath: str | None = None
+    chromas: list[dict] | None = None
+    colors: list[str] | None = None
+    contentId: str | None = None
+    description: str | None = None
+    descriptions: list[str] | None = None
+    gipDescription: str | None = None
+    gipImagePath: str | None = None
+    gipInventoryType: str | None = None
+    gipItemId: int | None = None
+    gipImage: str | None = None
+    gipName: str | None = None
+    id: int | None = None
+    name: str | None = None
+    parentSkinId: int | None = None
+    rarities: list[LCUInventoryItemRarity] | None = None
+    relatedPrimeContentId: str | None = None
+    skinClassification: str | None = None
+    skinLines: list[dict] | None = None
+    tilePath: str | None = None
+    disabledRegions: list[str] | None = None
+    isLegacy: bool | None = None
+    title: str | None = None
+    yearReleased: int | None = None
+    IsWIP: bool | None = None
+    TFTOnly: bool | None = None
+    TFTRarity: str | None = None
+    companionType: str | None = None
+    rarityValue: int | None = None
+    rarity: str | None = None
+    rarityGemPath: str | None = None
+    loadoutsIcon: str | None = None
+    collectionCardHoverVideoPath: str | None = None
+    collectionSplashVideoPath: str | None = None
+    emblems: str | None = None
+    featuresText: str | None = None
+    isBase: bool | None = None
+    skinType: str | None = None
+    splashPath: str | None = None
+    splashVideoPath: str | None = None
+    uncenteredSplashPath: str | None = None
+    isDefault: bool | None = None
+    itemId: int | None = None
+    level: int | None = None
+    speciesId: int | None = None
+    speciesName: str | None = None
+    upgrades: list | None = None
+    imagePath: str | None = None
+    esportsEvent: str | None = None
+    esportsTeam: str | None = None
+    groupId: int | None = None
+    groupName: str | None = None
+    loadScreenPath: str | None = None
+    previewVideoUrl: str | None = None
+    regionRarityId: int | None = None
+    inventoryIcon: str | None = None
+    taggedChampionsIds: list[int] | None = None
+    esportsRegion: str | None = None
+    regionalDescriptions: list[dict] | None = None
+    wardImagePath: str | None = None
+    wardShadowImagePath: str | None = None
+    loadScreenVintagePath: str | None = None
+    image: str | None = None
+    passType: str | None = None

@@ -136,7 +136,7 @@ class DataDragon(BaseAPIClient):
 
     async def get_champion_name(self, championID: int) -> str:
         lookup = await self._get_champion_lookup()
-        return lookup.get("by-id").get(championID)
+        return lookup.get("by-id").get(str(championID))
 
     async def get_champion_id(self, champion_name: str) -> int:
         lookup = await self._get_champion_lookup()
