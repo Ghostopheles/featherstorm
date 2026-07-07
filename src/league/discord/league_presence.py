@@ -84,12 +84,12 @@ class LeagueRichPresence:
             start=start,
             large_image=large_image,
             large_text=large_text,
-            buttons=[
-                {
-                    "label": "op.gg",
-                    "url": opgg_url
-                }
-            ]
+            #buttons=[
+            #    {
+            #        "label": "op.gg",
+            #        "url": opgg_url
+            #    }
+            #]
         )
 
         self.start_updates(get_game_data)
