@@ -2,6 +2,8 @@ import re
 import typer
 import asyncio
 
+from pathlib import Path
+
 from rich.box import ROUNDED
 from rich.text import Text
 from rich.panel import Panel
@@ -9,9 +11,9 @@ from rich.table import Table
 from rich.columns import Columns
 from rich.console import Group
 
-from league.dragon import DataDragon
+from league.dragon import DataDragon, ArtAssetType
 from league.models import DragonItem
-from league.console import console, print
+from league.console import console, print, format_file_path
 
 app = typer.Typer(name="dragon", no_args_is_help=True, help="DataDragon API commands")
 
@@ -149,5 +151,35 @@ def dragon_champion(champion_id: int):
             print(f"[bold red]Champion {champion_id} not found[/bold red]")
             return
         print(champion)
+
+    asyncio.run(run())
+
+@app.command(name="art", help="Get champion splash art by name")
+def dragon_splash(champion_name: str, skin: int = 0, asset_type: ArtAssetType = ArtAssetType.splash, output_path: Path | None = None):
+    filename = f"{asset_type.title()}_{champion_name}"
+
+    if asset_type == ArtAssetType.square:
+        filename += ".png"
+    else:
+        filename += f"_{skin}.jpg"
+
+    if output_path is None:
+        output_path = Path.cwd() / filename
+    else:
+        output_path = output_path.expanduser().resolve()
+        if output_path.is_dir():
+            output_path = output_path / filename
+
+    async def run():
+        dragon = DataDragon()
+        await dragon.initialize()
+
+        asset = await dragon.get_art_by_champion_name(champion_name, skin, asset_type)
+        if asset is None:
+            print(f"[bold red]Champion {champion_name} not found[/bold red]")
+            return
+
+        output_path.write_bytes(asset)
+        print(f"[bold green]Saved splash art to {format_file_path(output_path)}[/bold green]")
 
     asyncio.run(run())

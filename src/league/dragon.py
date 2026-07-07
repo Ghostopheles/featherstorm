@@ -1,7 +1,6 @@
 import httpx
 
-from PIL import Image
-from io import BytesIO
+from enum import StrEnum
 from pathlib import Path
 from typing import Optional
 
@@ -9,6 +8,7 @@ from league.config import get_str
 from league.cache import DataCache
 from league.models import DragonItem
 from league.http import BaseAPIClient
+from league.console import format_file_path, print
 
 CACHE_DIR = Path(get_str("cache_dir", "meta", "./data"))
 DRAGON_PATH = CACHE_DIR / "dragon"
@@ -17,6 +17,11 @@ DRAGON_PATH.mkdir(parents=True, exist_ok=True)
 RAW_BASE_URL = "https://ddragon.leagueoflegends.com"
 OFFICIAL_BASE_URL = RAW_BASE_URL + "/cdn/{version}"
 COMMUNITY_BASE_URL = "https://cdn.communitydragon.org/{version}"
+
+class ArtAssetType(StrEnum):
+    splash = "splash"
+    loading = "loading"
+    square = "square"
 
 class DataDragon(BaseAPIClient):
     locale: str = "en_US"
@@ -137,13 +142,12 @@ class DataDragon(BaseAPIClient):
         lookup = await self._get_champion_lookup()
         return int(lookup.get("by-name").get(champion_name))
 
-    async def get_loading_screen_art_by_champion_name(self, champion_name: str, skin: int = 0):
-        full_url = f"{RAW_BASE_URL}/cdn/img/champion/loading/{champion_name}_{skin}.jpg"
-        from league.console import format_file_path, print
-        print(format_file_path(full_url))
-        res = await self.get_full_url(full_url, no_json=True)
-        return Image.open(BytesIO(res.content))
+    async def get_art_by_champion_name(self, champion_name: str, skin: int = 0, asset_type: ArtAssetType = ArtAssetType.splash):
+        if asset_type == ArtAssetType.square:
+            full_url = f"img/champion/{champion_name}.png"
+            res = await self.get(full_url, no_json=True)
+        else:
+            full_url = f"{RAW_BASE_URL}/cdn/img/champion/{asset_type}/{champion_name}_{skin}.jpg"
+            res = await self.get_full_url(full_url, no_json=True)
 
-    async def get_loading_screen_art_by_champion_id(self, championID: int, skin: int = 0):
-        name = await self.get_champion_id(championID)
-        return await self.get_loading_screen_art_by_champion_name(name, skin)
+        return res.content
