@@ -65,13 +65,15 @@ class LeagueRichPresence:
         if opponent is not None:
             details += f" vs. {opponent}"
 
+        large_image = await self.get_image_key_for_skin(champion, skin_id)
+        large_text = active_player.skinName
+
         position = self.get_player_position(game_data)
         if position == "UTILITY":
             position = "SUPPORT"
-        details += f" | {position.title()}"
 
-        large_image = await self.get_image_key_for_skin(champion, skin_id)
-        large_text = active_player.skinName
+        small_image = self.get_image_key_for_position(position)
+        small_text = position.title()
 
         name = "League of Legends"
         game_mode = self.get_game_mode_string(game_data)
@@ -84,6 +86,8 @@ class LeagueRichPresence:
             start=start,
             large_image=large_image,
             large_text=large_text,
+            small_image=small_image,
+            small_text=small_text
             #buttons=[
             #    {
             #        "label": "op.gg",
@@ -169,3 +173,6 @@ class LeagueRichPresence:
                 return "Ranked"
             case _:
                 return None
+
+    def get_image_key_for_position(self, position: str) -> str:
+        return f"role_{position.lower()}"
