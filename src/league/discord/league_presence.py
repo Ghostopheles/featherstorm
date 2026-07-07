@@ -56,8 +56,14 @@ class LeagueRichPresence:
         opponent = self.get_lane_opponent(game_data)
         details = f"Playing {champion} vs. {opponent}"
         large_image = f"{champion.lower()}_{skin_id}"
+        large_text = active_player.skinName
 
-        self.presence.update_activity(details=details, start=start, large_image=large_image)
+        self.presence.update_activity(
+            details=details,
+            start=start,
+            large_image=large_image,
+            large_text=large_text
+        )
 
         self.start_updates(get_game_data)
 
