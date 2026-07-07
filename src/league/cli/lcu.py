@@ -201,7 +201,7 @@ def lcu_inventory_item_asset(endpoint: str, client_install_path: Optional[Path] 
     out.write_bytes(data.content)
 
 @inventory_app.command(name="tiles", help="Fetch skin tiles for a champion")
-def lcu_fetch_tiles(champion_id: int, output_dir: Path | None = None, client_install_path: Optional[Path] = default_client_path):
+def lcu_fetch_tiles(champion_name: str, output_dir: Path | None = None, client_install_path: Optional[Path] = default_client_path):
     client = LCUClient(client_install_path=client_install_path)
     dragon = DataDragon()
 
@@ -210,7 +210,7 @@ def lcu_fetch_tiles(champion_id: int, output_dir: Path | None = None, client_ins
 
     async def run():
         await dragon.initialize()
-        champion_name = await dragon.get_champion_name(champion_id)
+        champion_id = await dragon.get_champion_id(champion_name)
         dir = output_dir / champion_name.lower()
         dir.mkdir(parents=True, exist_ok=True)
 
@@ -234,10 +234,11 @@ def lcu_fetch_tiles(champion_id: int, output_dir: Path | None = None, client_ins
                 )
 
         for id, endpoint in endpoints:
-            print(f"Fetching tile for skin {id}...")
-            data = await client.get_asset(endpoint)
             better_id = id % 1000
-            out = dir / f"{better_id}.jpg"
+            print(f"Fetching tile for skin {better_id}...")
+
+            data = await client.get_asset(endpoint)
+            out = dir / f"{champion_name.lower()}_{better_id}.jpg"
             out.write_bytes(data.content)
 
     asyncio.run(run())
