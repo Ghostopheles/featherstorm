@@ -177,6 +177,8 @@ class LeagueRichPresence:
                 return "Practice Tool"
             case "RANKED":
                 return "Ranked"
+            case "KIWI":
+                return "ARAM"
             case _:
                 return None
 
