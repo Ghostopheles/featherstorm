@@ -713,3 +713,60 @@ class PlayerMatch(BaseModel):
             teammates=teammates,
             enemies=enemies,
         )
+
+@dataclass
+class BannedChampion:
+    pickTurn: int
+    championId: int
+    teamId: int
+
+@dataclass
+class Observer:
+    encryptionKey: str
+
+@dataclass
+class GameCustomizationObject:
+    category: str
+    content: str
+
+@dataclass
+class Perks:
+    perkIds: list[int]
+    perkStyle: int
+    perkSubStyle: int
+
+@dataclass
+class CurrentGameParticipant:
+    championId: int
+    perks: Perks
+    profileIconId: int
+    bot: bool
+    teamId: int
+    puuid: str
+    spell1Id: int
+    spell2Id: int
+    gameCustomizationObjects: list[GameCustomizationObject]
+
+    def __post_init__(self):
+        self.perks = Perks(**self.perks)
+        self.gameCustomizationObjects = [GameCustomizationObject(**obj) for obj in self.gameCustomizationObjects]
+
+@dataclass
+class CurrentGameInfo:
+    gameId: int
+    gameType: str
+    gameStartTime: int
+    mapId: int
+    gameLength: int
+    platformId: str
+    gameMode: str
+    bannedChampions: list[BannedChampion]
+    gameQueueConfigId: Queue
+    observers: Observer
+    participants: list[CurrentGameParticipant]
+
+    def __post_init__(self):
+        self.bannedChampions = [BannedChampion(**champ) for champ in self.bannedChampions]
+        self.gameQueueConfigId = Queue(self.gameQueueConfigId)
+        self.observers = Observer(**self.observers)
+        self.participants = [CurrentGameParticipant(**player) for player in self.participants]

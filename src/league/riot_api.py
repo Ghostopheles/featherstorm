@@ -9,7 +9,7 @@ import league.config as cfg
 from league.cache import DataCache
 from league.http import BaseAPIClient, RiotRateLimiter
 from league.enums import MatchType, Queue, RankedQueueType, RankedTier, RankedDivision
-from league.models import Match, MatchTimeline, PlayerMatch, LeagueEntry, RiotAccount
+from league.models import Match, MatchTimeline, PlayerMatch, LeagueEntry, RiotAccount, CurrentGameInfo
 
 LANGUAGE = "en_US"
 RIOT_REGION = "americas"
@@ -119,7 +119,8 @@ class RiotAPIClient(BaseAPIClient):
     async def get_puuid(self, game_name: str, tag_line: str) -> str | None:
         endpoint = f"/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
         res = await self.get(endpoint)
-        return res.get("puuid")
+        if res is not None:
+            return res.get("puuid")
 
     async def get_summoner(self, puuid: str) -> Optional[dict[str, Any]]:
         return await self.get(f"/lol/summoner/v4/summoners/by-puuid/{puuid}")
@@ -199,3 +200,8 @@ class RiotAPIClient(BaseAPIClient):
         data = await self.get(f"/lol/league/v4/entries/{queue.value}/{tier.value.upper()}/{division.value}", params=params)
         if data is not None:
             return [LeagueEntry(**entry) for entry in data]
+
+    async def get_live_match_for_puuid(self, puuid: str) -> CurrentGameInfo | None:
+        data = await self.get(f"/lol/spectator/v5/active-games/by-summoner/{puuid}")
+        if data is not None:
+            return CurrentGameInfo(**data)

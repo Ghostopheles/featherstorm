@@ -241,3 +241,25 @@ def riot_ranked_data(
         print(table)
 
     asyncio.run(run())
+
+@app.command(name="live-game", help="Fetch the currently ongoing match for a player")
+def riot_live_match(
+    game_name: str = config.get("companion.default_player_name"),
+    tag_line: str = config.get("companion.default_player_tagline"),
+):
+    client = _riot_client()
+
+    async def run():
+        puuid = await client.get_puuid(game_name, tag_line)
+        if puuid is None:
+            print(f"[error]Unable to fetch [white]puuid[/white] for [eminence]{game_name}#{tag_line}[/]")
+            return
+
+        game = await client.get_live_match_for_puuid(puuid)
+        if game is None:
+            print(f"[eminence]{game_name}#{tag_line}[/] does not have a currently active match.")
+            return
+
+        print(game)
+
+    asyncio.run(run())
