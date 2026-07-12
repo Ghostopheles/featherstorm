@@ -14,11 +14,14 @@ from chroma import (
 from govee import GoveeConnectionListener, GoveeColor
 
 from league import config
-from league.console import log, print
 from league.api import LeagueClient
+from league.console import log, print
 from league.watcher import MatchWatcher
-from league.models import GameEventType, GameTeam, GameEvent, GameResult, Turret
 from league.discord import LeagueRichPresence
+from league.lcu.socket import LCUWebsocketEvent
+from league.lcu.gameflow import LCUGameFlow, LCUGameFlowEvent
+from league.models import GameEventType, GameTeam, GameEvent, GameResult, Turret
+
 
 DATA_PATH = config.get("meta.cache_dir")
 
@@ -185,9 +188,30 @@ def register_event_feed(watcher: MatchWatcher, format_player):
     watcher.on(GameEventType.Ace, on_ace)
     watcher.on(GameEventType.GameEnd, on_game_end)
 
+async def register_gameflow_events(gameflow: LCUGameFlow, presence: LeagueRichPresence | None):
+    if presence is None:
+        return
+
+    async def on_lobby_create(event: LCUWebsocketEvent):
+        if isinstance(event.data, list):
+            return
+
+        await presence.init_lobby(event.data)
+    gameflow.add_callback(LCUGameFlowEvent.LobbyCreated, on_lobby_create)
+
+    async def on_lobby_update(event: LCUWebsocketEvent):
+        await presence.update_lobby(event.data)
+    gameflow.add_callback(LCUGameFlowEvent.LobbyUpdated, on_lobby_update)
+
+    async def on_lobby_delete(event: LCUWebsocketEvent):
+        await presence.init_empty()
+    gameflow.add_callback(LCUGameFlowEvent.LobbyDeleted, on_lobby_delete)
+
+    await gameflow.start()
 
 async def run_companion():
     client = LeagueClient()
+    gameflow = LCUGameFlow()
 
     govee = None
     enable_govee = config.get_or_set("companion.govee_enabled", default=False)
@@ -203,6 +227,10 @@ async def run_companion():
     if enable_discord:
         discord_client_id = config.get_or_set("discord.app_id")
         presence = LeagueRichPresence(discord_client_id)
+        await presence.init()
+        await presence.start_updates()
+
+    await register_gameflow_events(gameflow, presence)
 
     async def get_game_data():
         return await client.get_all_game_data()
@@ -331,3 +359,4 @@ async def run_companion():
         finally:
             if presence is not None:
                 await presence.close()
+            await gameflow.lcu.ws.disconnect()

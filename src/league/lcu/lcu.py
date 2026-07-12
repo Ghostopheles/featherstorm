@@ -275,3 +275,16 @@ class LCUClient(BaseAPIClient):
 
     async def get_asset(self, endpoint: str):
         return await self.get(endpoint, no_json=True)
+
+    async def get_gameflow_availability(self):
+        return await self.get(f"/lol-gameflow/v1/availability")
+
+    async def get_gameflow_phase(self):
+        phase = await self.get(f"/lol-gameflow/v1/gameflow-phase")
+        return LCUGameflowPhase(phase)
+
+    async def get_gameflow_session(self):
+        return await self.get(f"/lol-gameflow/v1/session")
+
+    async def get_lobby(self):
+        return await self.get("/lol-lobby/v2/lobby")

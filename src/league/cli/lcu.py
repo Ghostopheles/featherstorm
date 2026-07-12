@@ -242,3 +242,16 @@ def lcu_fetch_tiles(champion_name: str, output_dir: Path | None = None, client_i
             out.write_bytes(data.content)
 
     asyncio.run(run())
+
+gameflow_app = typer.Typer(name="gameflow", no_args_is_help=True)
+app.add_typer(gameflow_app)
+
+@gameflow_app.command(name="session", help="Print the current gameflow session")
+def lcu_gameflow_session(client_install_path: Optional[Path] = default_client_path):
+    client = LCUClient(client_install_path=client_install_path)
+
+    data = asyncio.run(client.get_gameflow_session())
+    out = Path("./data/gameflow_session.json")
+    import json
+    out.write_text(json.dumps(data, indent=4))
+    print(data)

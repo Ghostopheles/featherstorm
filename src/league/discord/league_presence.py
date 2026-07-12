@@ -2,13 +2,25 @@ import os
 import time
 import asyncio
 
+from enum import Enum
+from typing import Callable
+
 from league.enums import Queue
 from league.dragon import DataDragon
 from league.riot_api import RiotAPIClient
-from league.discord import DiscordRichPresence, DiscordActivity, ActivityType
+from league.lcu.gameflow import LCUGameFlow, LCUGameflowPhase
+from league.enums.queues import QUEUE_DESCRIPTION, QUEUE_MAP
 from league.models import AllGameData, Scores, GameTeam, CurrentGameInfo
+from league.discord import DiscordRichPresence, DiscordActivity, ActivityType
 
+MAX_PARTY_SIZE = 5
 UPDATE_INTERVAL = 15.0
+
+class SessionStatus(Enum):
+    Empty = 1
+    InLobby = 2
+    InQueue = 3
+    InGame = 4
 
 class LeagueRichPresence:
     presence: DiscordRichPresence
@@ -18,18 +30,15 @@ class LeagueRichPresence:
     champions: dict[str, str] | None = None
     active_player_name: str | None = None
     active_player_puuid: str | None = None
+    gameflow: LCUGameFlow | None = None
+    session_status: SessionStatus = SessionStatus.Empty
 
-    _queue_type_set: bool = False
+    _queue_type_set: bool | None = False
     _update_task: asyncio.Task | None = None
+    _get_game_data: Callable | None = None
 
     def __init__(self, client_id: str):
-        activity = DiscordActivity(
-            activity_type=ActivityType.PLAYING,
-            name="League of Legends",
-            details="Playing League of Legends",
-            state="Loading...",
-        )
-        self.presence = DiscordRichPresence(client_id, activity=activity)
+        self.presence = DiscordRichPresence(client_id)
         self.dragon = DataDragon()
         self._update_task = None
 
@@ -37,22 +46,69 @@ class LeagueRichPresence:
         if riot_api_key is not None:
             self.riot = RiotAPIClient(riot_api_key)
 
-    async def _update_loop(self, get_game_data):
+        self.gameflow = LCUGameFlow()
+        self.lcu = self.gameflow.lcu
+
+    async def _update_loop(self):
         while True:
             try:
-                data = await get_game_data()
-                await self.update(data)
+                await self.update()
             except Exception:
                 pass
             await asyncio.sleep(UPDATE_INTERVAL)
 
-    def start_updates(self, get_game_data):
-        self._update_task = asyncio.create_task(self._update_loop(get_game_data))
+    async def start_updates(self):
+        await self.presence.connect()
+        self._update_task = asyncio.create_task(self._update_loop())
 
     def stop_updates(self):
         if self._update_task:
             self._update_task.cancel()
             self._update_task = None
+
+    async def init(self):
+        phase = await self.gameflow.get_phase()
+        match phase:
+            case LCUGameflowPhase.Home:
+                await self.init_empty()
+            case LCUGameflowPhase.Lobby:
+                lobby_data = await self.lcu.get_lobby()
+                await self.init_lobby(lobby_data)
+            case _:
+                await self.init_empty()
+
+    async def init_empty(self):
+        activity = DiscordActivity(
+            activity_type=ActivityType.PLAYING,
+            name="League of Legends",
+            state="Hanging out",
+            details="In Client",
+            start=int(time.time())
+        )
+        self.presence.set_activity(activity)
+        self.session_status = SessionStatus.Empty
+
+    async def init_lobby(self, event_data: dict | list):
+        name = "League of Legends (Lobby)"
+
+        game_config = event_data.get("gameConfig")
+
+        num_players = len(event_data.get("members"))
+        max_players = game_config.get("maxLobbySize")
+        party_size = [num_players, max_players]
+
+        queue_id = game_config.get("queueId")
+        state = QUEUE_DESCRIPTION.get(queue_id)
+
+        activity = DiscordActivity(
+            activity_type=ActivityType.PLAYING,
+            name=name,
+            state=state,
+            start=int(time.time()),
+            party_size=party_size,
+        )
+        self.presence.set_activity(activity)
+        self.session_status = SessionStatus.InLobby
 
     async def init_match(
         self,
@@ -62,13 +118,12 @@ class LeagueRichPresence:
         active_player_name: str,
         get_game_data
     ):
+        self._get_game_data = get_game_data
         await self.dragon.initialize()
 
         self.teams = player_teams
         self.champions = player_champions
         self.active_player_name = active_player_name
-
-        await self.presence.connect()
 
         start = int(time.time() - game_data.gameData.gameTime)
 
@@ -101,7 +156,7 @@ class LeagueRichPresence:
         if game_mode is not None:
             name += f" ({game_mode})"
 
-        self.presence.update_activity(
+        activity = DiscordActivity(
             name=name,
             details=details,
             start=start,
@@ -116,18 +171,29 @@ class LeagueRichPresence:
             #    }
             #]
         )
+        self.presence.set_activity(activity)
+        self.session_status = SessionStatus.InGame
 
-        self.start_updates(get_game_data)
+    async def update_lobby(self, lobby_data):
+        ...
 
-    async def update(self, game_data: AllGameData):
-        await self.try_update_queue_type()
+    async def update_active_match(self):
+        if self._get_game_data is None:
+            return
 
+        game_data = await self._get_game_data()
         scores = self.get_score_for_active_player(game_data)
         if scores is None:
             return
 
         state = f"K/D/A: {scores.kills} / {scores.deaths} / {scores.assists} | {scores.creepScore} CS"
         self.presence.update_activity(state=state)
+
+    async def update(self):
+        match self.session_status:
+            case SessionStatus.InGame:
+                await self.update_active_match()
+
         await self.presence.update()
 
     async def end_match(self):

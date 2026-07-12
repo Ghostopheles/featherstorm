@@ -29,7 +29,7 @@ class LeagueClient(BaseAPIClient):
         self._history = []
 
     async def get_client_status(self) -> LeagueClientStatus:
-        err = await self.get("/eventdata", _return_exception=True)
+        err = await self.get("/eventdata", _return_exception=True, _suppress_exception=True)
         if isinstance(err, httpx.HTTPStatusError):
             return LeagueClientStatus.LOADING
         if isinstance(err, httpx.RequestError):
@@ -60,7 +60,7 @@ class LeagueClient(BaseAPIClient):
         return None
 
     async def get_all_events(self):
-        events = await self.get("/eventdata")
+        events = await self.get("/eventdata", _suppress_exception=True)
         if events is not None:
             return events.get("Events")
 

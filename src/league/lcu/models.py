@@ -529,3 +529,12 @@ class LCUInventoryItem:
     loadScreenVintagePath: str | None = None
     image: str | None = None
     passType: str | None = None
+
+class LCUGameflowPhase(StrEnum):
+    Home = "None" # TODO: help
+    Lobby = "Lobby"
+    Matchmaking = "Matchmaking"
+    ReadyCheck = "ReadyCheck"
+    ChampSelect = "ChampSelect"
+    InProgress = "InProgress"
+    EndOfGame = "EndOfGame"
