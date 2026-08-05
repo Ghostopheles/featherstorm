@@ -9,12 +9,15 @@ uv run bladecaller
 
 Visual language derives from the design mockup at `ref/Featherstorm.html` (repo root) — dark violet/near-black surfaces, magenta accent, Barlow Semi Condensed for display text, Inter for body text.
 
-> **Never `Read` `ref/Featherstorm.html` whole — it is ~1.8 MB (fonts inlined as base64).** Grep it for the selector or CSS custom property you need. Everything already ported lives in [`resources/theme.py`](resources/theme.py); check there first.
+> **Design reference is [`DESIGN.md`](DESIGN.md)** — the mockup transcribed: every token (with `oklch` → sRGB conversions), the type scale, layout utilities, per-component specs, page compositions, and a Qt-porting table. Read that, not the mockup.
+>
+> **Never `Read` `ref/Featherstorm.html` whole — it is ~1.8 MB**, a self-extracting bundle (base64 asset manifest + JSON-escaped React template), so grepping it is also unhelpful. If something genuinely isn't in `DESIGN.md`, extract the real markup first: the template is the single JSON string line starting `"<!DOCTYPE html>` — `json.loads()` it to get ~88 KB of readable CSS/JSX. Everything already ported lives in [`resources/theme.py`](resources/theme.py); check there first.
 
 ## Layout
 
 ```
 bladecaller/
+├── DESIGN.md        # design reference — mockup transcribed (tokens, type, components, pages)
 ├── __init__.py      # launch_ui() — imports ui.app lazily, errors if `ui` extra missing
 ├── core/
 │   └── settings_schema.py  # SettingField/SCHEMA/SECTION_LABELS — widget hints per config key
