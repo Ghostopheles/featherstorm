@@ -18,6 +18,7 @@ WAIT_INTERVAL = config.get_float("companion.wait_interval", default=2.0)
 POLL_INTERVAL = config.get_float("companion.poll_interval", default=0.25)
 SESSION_TIMEOUT = config.get_float("companion.session_timeout", default=30.0)
 
+
 class MatchWatcher:
     _client: LeagueClient
     _session_start_callbacks: list[SessionCallback]
@@ -25,32 +26,39 @@ class MatchWatcher:
     _retries: int = 0
     _is_reconnecting: bool = False
 
-    def __init__(self, client: LeagueClient):
+    def __init__(self, client: LeagueClient, exit_on_timeout: bool = True):
         self._client = client
+        self._exit_on_timeout = exit_on_timeout
         self._session_start_callbacks = []
         self._session_end_callbacks = []
 
     def on(self, event_type: GameEventType, callback: EventCallback | None = None):
         if callback is None:
+
             def decorator(fn: EventCallback) -> EventCallback:
                 self._client.on(event_type, fn)
                 return fn
+
             return decorator
         self._client.on(event_type, callback)
 
     def on_session_start(self, callback: SessionCallback | None = None):
         if callback is None:
+
             def decorator(fn: SessionCallback) -> SessionCallback:
                 self._session_start_callbacks.append(fn)
                 return fn
+
             return decorator
         self._session_start_callbacks.append(callback)
 
     def on_session_end(self, callback: SessionCallback | None = None):
         if callback is None:
+
             def decorator(fn: SessionCallback) -> SessionCallback:
                 self._session_end_callbacks.append(fn)
                 return fn
+
             return decorator
         self._session_end_callbacks.append(callback)
 
@@ -75,7 +83,7 @@ class MatchWatcher:
             BarColumn(pulse_style="featherstorm"),
             TimeElapsedColumn(),
             console=console,
-            transient=True
+            transient=True,
         ) as progress:
             task = progress.add_task("[yellow]Polling[/]", total=None)
             start = progress.get_time()
@@ -115,7 +123,7 @@ class MatchWatcher:
     async def run(self):
         while True:
             connected = await self._wait_for_session()
-            if connected: # we've exhausted our retries, or gracefully disconnected
+            if connected:  # we've exhausted our retries, or gracefully disconnected
                 verb = f"reconnected after [highlight]{self._retries}[/highlight] attempt(s)" if self._is_reconnecting else "connected"
                 log(f"[green]League client {verb}.[/]")
             elif self._is_reconnecting:
@@ -123,6 +131,8 @@ class MatchWatcher:
                 log_warning(f"[warning]Failed to reconnect to League client after [highlight]{self._retries}[/highlight] attempt(s)[/]")
                 break
             else:
+                if not self._exit_on_timeout:
+                    continue
                 log(f"League client disconnected.")
                 break
 
