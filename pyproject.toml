@@ -28,6 +28,7 @@ bladecaller = "league.bladecaller:launch_ui"
 [project.optional-dependencies]
 ui = [
     "pyside6>=6.11.1",
+    "qasync>=0.28.0",
 ]
 
 [build-system]

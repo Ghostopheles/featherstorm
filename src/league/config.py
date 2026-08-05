@@ -15,10 +15,26 @@ DEFAULT_CONFIG = {
     "lcu": {"client_install_path": "F:/Games/Riot Games/League of Legends"},
     "govee": {"default_power_state": True, "default_brightness": 100, "request_timeout": 0.5},
     "chroma": {"teammate_dim_factor": 0.4},
-    "companion": {"default_player_name": "Dallas N Tollway", "default_player_tagline": "uwu", "govee_enabled": False, "wait_interval": 2.0, "poll_interval": 0.25, "max_reconnect_attempts": 5, "session_timeout": 30.0},
+    "companion": {
+        "default_player_name": "Dallas N Tollway",
+        "default_player_tagline": "uwu",
+        "govee_enabled": False,
+        "wait_interval": 2.0,
+        "poll_interval": 0.25,
+        "max_reconnect_attempts": 5,
+        "session_timeout": 30.0,
+    },
     "meta": {"cache_dir": "X:/featherstorm/data"},
-    "highlights": {"export_constant_quality": "20", "export_preset": "6", "export_fps": "60", "export_multipass": "fullres", "export_audio_quality": "192k", "export_path": "X:/featherstorm/data/highlights"},
+    "highlights": {
+        "export_constant_quality": "20",
+        "export_preset": "6",
+        "export_fps": "60",
+        "export_multipass": "fullres",
+        "export_audio_quality": "192k",
+        "export_path": "X:/featherstorm/data/highlights",
+    },
     "discord": {"enable_rich_presence": True, "app_id": "1524125882795692146"},
+    "bladecaller": {"status_poll_interval": 3.0},
 }
 
 _cache: dict | None = None

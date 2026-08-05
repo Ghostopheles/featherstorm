@@ -22,7 +22,8 @@ bladecaller/
 ├── core/
 │   ├── settings_schema.py  # SettingField/SCHEMA/SECTION_LABELS — widget hints per config key
 │   └── status.py           # ClientStatus + STATUS_LABELS/STATUS_TOOLTIPS for the sidebar indicator
-├── controllers/     # (empty — reserved for page ↔ backend wiring)
+├── controllers/     # page ↔ backend wiring
+│   └── client_status.py    # ClientStatusController — polls LCU gameflow phase, emits ClientStatus
 ├── qt/              # (empty)
 ├── resources/
 │   ├── __init__.py  # load_stylesheet(), load_fonts(), load_icon(), icon_path(), app_version()
@@ -45,7 +46,7 @@ bladecaller/
 - **`resources/fonts/`** — bundled Inter (300–600) and Barlow Semi Condensed (400–700) TTFs, registered by `load_fonts()` *before* the stylesheet is applied. Extracted from the mockup's woff2 bundle; name records were normalized (nameID 16/17 = typographic family/subfamily) so Qt matches faces by `font-weight` rather than treating "Inter SemiBold" as a separate family.
 - **`resources/icons/`** — Feather-style 24×24 SVGs, stroke color baked into the file. `load_icon(name)` → `QIcon`; `icon_path(name)` → forward-slashed str for QSS `url()`.
 
-Startup order in [`ui/app.py`](ui/app.py) matters: `setStyle("Fusion")` → `load_fonts()` → `setFont()` → `setStyleSheet()`. The Fusion style is not cosmetic — the native Windows style ignores large parts of the QSS (sub-control rules like `QSpinBox::up-button`, `QComboBox::down-arrow`, `QCheckBox::indicator`). Any offscreen/test harness must set it too or the render won't match.
+Startup order in [`ui/app.py`](ui/app.py) matters: `config.init()` → `setStyle("Fusion")` → `load_fonts()` → `setFont()` → `setStyleSheet()`. The Fusion style is not cosmetic — the native Windows style ignores large parts of the QSS (sub-control rules like `QSpinBox::up-button`, `QComboBox::down-arrow`, `QCheckBox::indicator`). Any offscreen/test harness must set it too or the render won't match.
 
 Adding an icon that QSS references by `url()` takes two steps: drop the SVG in `resources/icons/`, then register it in the `tokens.update({...})` block of `load_stylesheet()` ([`resources/__init__.py`](resources/__init__.py)). Icons used only from Python (`load_icon(...)`) need no registration.
 
@@ -70,6 +71,31 @@ Styling hangs off object names and Qt properties, not per-widget stylesheets:
 - **`Page(title, subtitle)`** — standard page shell; subclass and add to `self.content`.
 - **`Card(title=None, fill=False)`** — bordered surface; add to `card.body`. `fill=True` claims leftover vertical space, otherwise the card hugs its contents.
 - **`PageHeader`**, **`CardTitle`**, **`Separator`**, **`StatValue`**, **`StatLabel`**.
+
+## Event loop
+
+The UI runs Qt and asyncio on **one** loop via [`qasync`](https://pypi.org/project/qasync/) (part of the `ui` extra), so `run()` ends in `loop.run_forever()` instead of `app.exec()`:
+
+```python
+loop = qasync.QEventLoop(app)
+asyncio.set_event_loop(loop)
+app.aboutToQuit.connect(loop.stop)
+...
+with loop:
+    controller.start()
+    loop.run_forever()
+    loop.run_until_complete(controller.close())
+```
+
+The backend is async top to bottom (`httpx.AsyncClient` everywhere), and this is what lets a controller `await` it directly. Because there is only one loop, controller callbacks and signal emissions already run on the GUI thread — no `QThread`, no cross-thread marshalling.
+
+Consequences:
+
+- `run()` returns `0` explicitly; `loop.run_forever()` has no exit code.
+- **`app.quit()` does not stop `run_forever()`** — without `aboutToQuit → loop.stop`, closing the window leaves the process alive. qasync emits `aboutToQuit` more than once during teardown; `loop.stop()` is idempotent, so that's fine.
+- Async cleanup runs *after* `run_forever()` returns, via `run_until_complete` while still inside `with loop:` (the `with` closes the loop on exit). Scheduling it from the `aboutToQuit` handler instead would never complete — the loop is stopping.
+- **Never call `app.processEvents()` from inside a coroutine** — it re-enters the loop qasync is driving. Use `await asyncio.sleep(0)`. This only bites test harnesses; the offscreen render below runs outside the loop.
+- Quitting from a non-GUI thread doesn't work under this setup (a test harness that calls `app.quit()` from a `threading.Thread` will hang). Use `QTimer.singleShot`.
 
 ## Verifying a change
 
@@ -118,7 +144,7 @@ self.add_page("My Page", MyPage(), load_icon("my-icon.svg"))
 
 ## Status indicator
 
-`SidebarStatus` ([`ui/main_window.py`](ui/main_window.py)) sits between the nav list and the footer, reachable as `window.status`. It is **not wired to a backend** — nothing polls the LCU or Live Client API yet. Drive it manually:
+`SidebarStatus` ([`ui/main_window.py`](ui/main_window.py)) sits between the nav list and the footer, reachable as `window.status`. It can still be driven manually:
 
 ```python
 window.status.set_status(ClientStatus.IN_MATCH)
@@ -126,7 +152,29 @@ window.status.set_status(ClientStatus.IN_MATCH)
 
 `ClientStatus` ([`core/status.py`](core/status.py)) has `DISCONNECTED` / `CONNECTED` / `IN_MATCH`; its values double as the QSS `state` property on `#statusDot` (grey / `GREEN` / `ACCENT`). Labels and tooltips come from `STATUS_LABELS` / `STATUS_TOOLTIPS`. `set_status()` repolishes the dot, since a dynamic property set after show doesn't restyle on its own.
 
-Wiring it up means a controller in `controllers/` on a `QTimer` — `LCUClient` for client presence/gameflow phase, `LeagueClient` for in-game. Keep the import inside the controller; `main_window` must stay free of `league.lcu`.
+It is wired to [`controllers/client_status.py`](controllers/client_status.py) in [`ui/app.py`](ui/app.py) — `status_changed` → `window.status.set_status`. `main_window` stays free of `league.lcu`; the controller owns that import.
+
+## Controllers
+
+**[`ClientStatusController`](controllers/client_status.py)** — `QObject` with a `status_changed = Signal(ClientStatus)`. `start()` spawns an asyncio task polling every `bladecaller.status_poll_interval` seconds (default 3.0); `poll_once()` is the single-shot version. Emits **only on transitions**, so connecting it directly to `set_status` won't thrash the repolish.
+
+Status comes from the **LCU gameflow phase**, not the Live Client API:
+
+| Phase | Status |
+|-------|--------|
+| LCU unreachable | `DISCONNECTED` |
+| `InProgress` | `IN_MATCH` |
+| anything else | `CONNECTED` |
+
+Probing the Live Client API (`127.0.0.1:2999`) costs **~2s per poll** when no game is running — Windows doesn't promptly refuse the closed loopback port, so the connect attempt stalls. The gameflow phase answers in ~3ms and additionally reports `InProgress` during the load screen, before the Live Client API is serving. Don't reintroduce a `LeagueClient` probe here.
+
+`LCUClient` is cached across polls, not rebuilt — its `__init__` also constructs a `DataDragon` with a second `httpx.AsyncClient`, so per-poll construction leaks two clients a tick. `_drop_lcu()` closes both. The cache is dropped whenever a phase request raises (client exited, stale lockfile) and rebuilt on the next poll; that's what makes the app tolerate League starting *after* it.
+
+Note `LCUClient.__init__` raises if the lockfile is missing, so a controller can never hold one from startup — `_get_phase()` builds it lazily on first success.
+
+Adding another controller: same shape (`QObject` + signal, asyncio task, no Qt widgets), constructed and connected in `ui/app.py`.
+
+`LeagueEventBridge` ([`league/bridge.py`](../bridge.py)) is the eventual home for live match events, but it builds its `LCUClient` once in `__init__` and permanently disables out-of-game events if the client wasn't running then — unusable for a desktop app that starts before League. Fix that before wiring the bridge into the UI.
 
 ## Settings page
 

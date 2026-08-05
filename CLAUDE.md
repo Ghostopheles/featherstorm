@@ -80,6 +80,7 @@ league-of-snakes/
 - **pillow** — image handling (skin tiles/art)
 - **pynput** — input simulation (highlights recording)
 - **pyside6** — desktop UI (optional `ui` extra; `bladecaller` gui-script)
+- **qasync** — unifies the Qt and asyncio event loops in the UI (optional `ui` extra)
 
 ## Running
 
@@ -132,6 +133,7 @@ Categories and keys:
 - `highlights.export_multipass` (default `'fullres'`) — multipass encoding mode
 - `highlights.export_audio_quality` (default `'192k'`) — audio bitrate
 - `meta.cache_dir` — cache directory for Data Dragon and other metadata
+- `bladecaller.status_poll_interval` (default `3.0`s) — how often the UI sidebar indicator polls the LCU gameflow phase
 
 Manage via CLI:
 ```bash
@@ -243,6 +245,8 @@ All Chroma effects created at startup via `setup_chroma_effects()` in [league/co
 ## Bladecaller UI
 
 PySide6 desktop app (`bladecaller` gui-script, optional `ui` extra). Style is token-driven: colors/fonts/radii live in `src/league/bladecaller/resources/theme.py`, substituted into the `app.qss` template at load.
+
+Qt and asyncio share one loop via `qasync`, so controllers `await` the async backend directly with no threading. `ClientStatusController` (`bladecaller/controllers/client_status.py`) polls the LCU gameflow phase and drives the sidebar status dot.
 
 **Working on the UI? Read [src/league/bladecaller/CLAUDE.md](src/league/bladecaller/CLAUDE.md)** — style system, selector table, `components.py` API, adding-a-page recipe, quirks.
 
