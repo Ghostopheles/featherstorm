@@ -28,7 +28,7 @@ QWidget#sidebar {
 }
 
 QWidget#sidebarHeader {
-    border-bottom: 1px solid $BORDER;
+    border-bottom: 1px solid $DIVIDER;
 }
 
 QLabel#logoMark {
@@ -46,9 +46,36 @@ QLabel#appTitle {
 }
 
 QLabel#appVersion {
-    font-size: 9px;
+    font-family: "$FONT_DISPLAY";
+    font-size: 12px;
+    font-weight: 600;
     letter-spacing: 1px;
-    color: $TEXT3;
+    color: $TEXT2;
+}
+
+QWidget#sidebarStatus {
+    border-top: 1px solid $DIVIDER;
+}
+
+QLabel#statusDot {
+    background: $TEXT3;
+    border-radius: 4px;
+}
+QLabel#statusDot[state="connected"] {
+    background: $GREEN;
+}
+QLabel#statusDot[state="match"] {
+    background: $ACCENT;
+}
+
+QLabel#statusText {
+    font-size: 11px;
+    letter-spacing: 0.3px;
+    color: $TEXT2;
+}
+
+QWidget#sidebarFooter {
+    border-top: 1px solid $DIVIDER;
 }
 
 QListWidget#nav {

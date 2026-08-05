@@ -18,6 +18,7 @@ SIDEBAR_BOTTOM = "#0a0816"
 BORDER = "rgba(120, 90, 180, 18%)"
 BORDER_SOFT = "rgba(120, 90, 180, 8%)"
 BORDER_BRIGHT = "rgba(180, 100, 200, 35%)"
+DIVIDER = "rgba(150, 115, 210, 40%)"
 
 HOVER_WASH = "rgba(255, 255, 255, 3%)"
 

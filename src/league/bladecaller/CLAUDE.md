@@ -20,7 +20,8 @@ bladecaller/
 ├── DESIGN.md        # design reference — mockup transcribed (tokens, type, components, pages)
 ├── __init__.py      # launch_ui() — imports ui.app lazily, errors if `ui` extra missing
 ├── core/
-│   └── settings_schema.py  # SettingField/SCHEMA/SECTION_LABELS — widget hints per config key
+│   ├── settings_schema.py  # SettingField/SCHEMA/SECTION_LABELS — widget hints per config key
+│   └── status.py           # ClientStatus + STATUS_LABELS/STATUS_TOOLTIPS for the sidebar indicator
 ├── controllers/     # (empty — reserved for page ↔ backend wiring)
 ├── qt/              # (empty)
 ├── resources/
@@ -31,7 +32,7 @@ bladecaller/
 │   └── icons/       # feather (logo), gear, chevrons, check, nav icons (SVG)
 └── ui/
     ├── app.py       # run() — QApplication setup, font/stylesheet install
-    ├── main_window.py  # MainWindow + SidebarHeader (logo/title/version)
+    ├── main_window.py  # MainWindow + SidebarHeader (logo/title) + SidebarStatus (client state)
     ├── components.py   # Page, PageHeader, Card, CardTitle, Separator, StatValue, StatLabel
     ├── pages/       # DashboardPage, SettingsPage
     └── settings/    # editors.py — make_editor() maps config values to widgets
@@ -54,7 +55,9 @@ Styling hangs off object names and Qt properties, not per-widget stylesheets:
 
 | Selector | Use |
 |----------|-----|
-| `#sidebar`, `#sidebarHeader`, `#logoMark`, `#appTitle`, `#appVersion` | Sidebar chrome |
+| `#sidebar`, `#sidebarHeader`, `#logoMark`, `#appTitle` | Sidebar chrome |
+| `#sidebarStatus`, `#statusDot`, `#statusText` | Client/match status strip |
+| `#sidebarFooter`, `#appVersion` | Sidebar footer (gear + version) |
 | `#nav`, `#navSettings` | Nav list + gear button |
 | `#pageTitle`, `#pageSubtitle` | Page header text |
 | `#card`, `#cardTitle`, `#sectionTitle` | Card surfaces |
@@ -113,6 +116,18 @@ self.add_page("My Page", MyPage(), load_icon("my-icon.svg"))
 
 `_build_pages()` imports pages and `league.config` inside the function body, not at module scope — keeps `main_window` importable without dragging in the page tree. Follow that when registering new pages.
 
+## Status indicator
+
+`SidebarStatus` ([`ui/main_window.py`](ui/main_window.py)) sits between the nav list and the footer, reachable as `window.status`. It is **not wired to a backend** — nothing polls the LCU or Live Client API yet. Drive it manually:
+
+```python
+window.status.set_status(ClientStatus.IN_MATCH)
+```
+
+`ClientStatus` ([`core/status.py`](core/status.py)) has `DISCONNECTED` / `CONNECTED` / `IN_MATCH`; its values double as the QSS `state` property on `#statusDot` (grey / `GREEN` / `ACCENT`). Labels and tooltips come from `STATUS_LABELS` / `STATUS_TOOLTIPS`. `set_status()` repolishes the dot, since a dynamic property set after show doesn't restyle on its own.
+
+Wiring it up means a controller in `controllers/` on a `QTimer` — `LCUClient` for client presence/gameflow phase, `LeagueClient` for in-game. Keep the import inside the controller; `main_window` must stay free of `league.lcu`.
+
 ## Settings page
 
 [`ui/pages/settings.py`](ui/pages/settings.py) renders the whole TOML config (`league.config.get_full_config()`) generically — one `QGroupBox` per section, one row per key. Widget choice comes from the value's Python type, overridden per key by `SCHEMA` in [`core/settings_schema.py`](core/settings_schema.py) (`kind`, bounds, suffix, `as_str` for numeric-looking strings). Adding a config key needs no UI change; add a `SettingField` only when the inferred widget is wrong.
@@ -128,8 +143,10 @@ Widget dispatch order in [`ui/settings/editors.py`](ui/settings/editors.py) is l
 - Qt stylesheets have no variables — that's why `app.qss` is templated. Adding a color means adding it to `theme.py`, nothing else. `TOKENS` is built by scanning `globals()` for uppercase names, so a new token needs no registration — but it also means non-color constants (`SIDEBAR_WIDTH`, `FONT_SIZE`) are tokens too, and are imported directly as Python where Qt needs a number.
 - QSS is not CSS. No `box-shadow`, no `transition`/animation, no `transform`, no `gap`, no `calc()`, no `oklch()`, no `:has()`/`>`/sibling combinators, no `::before`/`::after`. Porting anything from the mockup means picking a Qt-expressible stand-in (usually `qlineargradient`, a border color, or a layout margin). Qt's shorthand parsing is also stricter — prefer explicit `border-color` / `padding` longhands when a rule silently does nothing.
 - Dynamic Qt properties used as selectors (`accent`, `muted`) only restyle at polish time. Setting one *after* the widget is shown needs `w.style().unpolish(w); w.style().polish(w)`. Existing code sets them at construction, so it hasn't bitten yet.
-- The settings gear lives at the *bottom* of the sidebar (`#navSettings`), separate from the nav list; selecting a nav row unchecks it and vice versa.
+- The settings gear lives at the *bottom* of the sidebar (`#navSettings`), separate from the nav list; selecting a nav row unchecks it and vice versa. The version label shares that footer row, right-aligned.
 - Sidebar version string comes from `importlib.metadata.version("featherstorm")`, falling back to `"dev"` when the package isn't installed.
+- **A `QWidget` *subclass* does not paint its QSS `background`/`border` unless it sets `Qt.WA_StyledBackground`.** Plain `QWidget()` instances get the attribute automatically when a rule matches, which is why `#sidebar`/`#sidebarFooter` work untouched while `SidebarHeader`/`SidebarStatus` set it explicitly. A border that silently doesn't render is almost always this.
+- Sidebar divider lines use the `DIVIDER` token, not `BORDER` — `BORDER` (18% alpha) is invisible against the sidebar gradient.
 - `Card` defaults to `QSizePolicy.Maximum` vertically. Without that a `Preferred` card swallows the space a trailing `addStretch()` was meant to take.
 - Offscreen render for visual checks: `QT_QPA_PLATFORM=offscreen`, then `window.grab().save(path)` — see [Verifying a change](#verifying-a-change) for the full command.
 - PySide6 is an *optional* dep (`ui` extra). Nothing under `bladecaller/` may be imported from `league.cli`, `league.companion`, or any other non-UI module — `launch_ui()` in [`__init__.py`](__init__.py) is the only entry point and it catches the `ImportError`. Import in the other direction (UI → `league.config` etc.) is fine.
