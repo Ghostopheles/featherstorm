@@ -9,11 +9,14 @@ from league.bladecaller.resources import load_icon
 
 class MainWindow(QMainWindow):
     NAV_WIDTH = 180
+    WINDOW_TITLE = "Bladecaller"
+    WINDOW_WIDTH = 1600
+    WINDOW_HEIGHT = 900
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Bladecaller")
-        self.resize(1600, 900)
+        self.setWindowTitle(self.WINDOW_TITLE)
+        self.resize(self.WINDOW_WIDTH, self.WINDOW_HEIGHT)
 
         self.nav = QListWidget()
         self.nav.setObjectName("nav")
