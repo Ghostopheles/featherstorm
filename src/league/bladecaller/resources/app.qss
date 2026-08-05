@@ -1,3 +1,6 @@
+QWidget#sidebar {
+    background: #1e1e2e;
+}
 QListWidget#nav {
     background: #1e1e2e;
     border: none;
@@ -16,4 +19,16 @@ QListWidget#nav::item:selected {
     background: #313244;
     color: #cdd6f4;
     border-left: 3px solid #89b4fa;
+}
+QToolButton#navSettings {
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+}
+QToolButton#navSettings:hover {
+    background: #313244;
+}
+QToolButton#navSettings:checked {
+    background: #313244;
+    border: 1px solid #89b4fa;
 }
