@@ -1,5 +1,3 @@
-import sys
-
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
@@ -44,8 +42,10 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(widget)
 
     def _build_pages(self):
-        from .pages.dashboard import DashboardPage
-        from .pages.settings import SettingsPage
+        from league.bladecaller.ui.pages import DashboardPage, SettingsPage
 
         self.add_page("Dashboard", DashboardPage())
-        self.add_page("Settings", SettingsPage())
+
+        from league.config import get_full_config
+        config = get_full_config()
+        self.add_page("Settings", SettingsPage(config=config))
