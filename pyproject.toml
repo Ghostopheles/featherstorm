@@ -1,7 +1,7 @@
 [project]
 name = "featherstorm"
 version = "0.1.0"
-description = "Add your description here"
+description = "A League of Legends companion terminal app."
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
@@ -22,6 +22,14 @@ dependencies = [
 [project.scripts]
 featherstorm = "league.cli:app"
 
+[project.gui-scripts]
+bladecaller = "league.bladecaller:launch_ui"
+
+[project.optional-dependencies]
+ui = [
+    "pyside6>=6.11.1",
+]
+
 [build-system]
 requires = ["uv_build==0.11.7"]
 build-backend = "uv_build"
@@ -35,6 +43,8 @@ govee = { path = "../govee", editable = true }
 
 [dependency-groups]
 dev = [
+    "pytest>=9.1.1",
+    "pytest-qt>=4.5.0",
     "ruff>=0.15.4",
 ]
 

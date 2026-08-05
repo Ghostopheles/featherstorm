@@ -1,0 +1,19 @@
+QListWidget#nav {
+    background: #1e1e2e;
+    border: none;
+    outline: none;
+    padding-top: 8px;
+}
+QListWidget#nav::item {
+    color: #a6adc8;
+    padding-left: 16px;
+    border-left: 3px solid transparent;
+}
+QListWidget#nav::item:hover {
+    background: #313244;
+}
+QListWidget#nav::item:selected {
+    background: #313244;
+    color: #cdd6f4;
+    border-left: 3px solid #89b4fa;
+}
