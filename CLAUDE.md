@@ -49,6 +49,7 @@ league-of-snakes/
 │   │   ├── riot.py       # riot_app (matches, match, timeline, puuid, ranked, live-game)
 │   │   ├── highlights.py # highlights_app
 │   │   └── dragon.py     # dragon_app (item, champion, art)
+│   ├── bladecaller/      # PySide6 desktop UI — see src/league/bladecaller/CLAUDE.md
 │   ├── discord/
 │   │   ├── presence.py         # DiscordRichPresence, DiscordActivity — generic pypresence wrapper
 │   │   └── league_presence.py  # LeagueRichPresence — League-aware presence (lobby/in-game status, KDA, skin art, role icon)
@@ -59,7 +60,7 @@ league-of-snakes/
 │       ├── gameflow.py   # LCUGameFlow + LCUGameFlowEvent (lobby created/updated/deleted via websocket, gameflow phase)
 │       └── exceptions.py # LCU replay exceptions
 ├── data/                 # Sample JSON snapshots for development/testing
-└── ref/                  # Reference JSON snapshots
+└── ref/                  # Reference JSON snapshots + Featherstorm.html (UI design mockup)
 ```
 
 ## Tech Stack
@@ -78,6 +79,7 @@ league-of-snakes/
 - **websockets** — LCU websocket client (`lcu/socket.py`)
 - **pillow** — image handling (skin tiles/art)
 - **pynput** — input simulation (highlights recording)
+- **pyside6** — desktop UI (optional `ui` extra; `bladecaller` gui-script)
 
 ## Running
 
@@ -94,6 +96,12 @@ uv run featherstorm highlights capture [--game-path P] [--export-path P] [--name
 uv run featherstorm dragon item <item_id>
 uv run featherstorm dragon champion <champion_id>
 uv run featherstorm dragon art <champion_name> [--skin N] [--asset-type splash|...] [--output-path P]
+```
+
+Desktop UI:
+```bash
+uv sync --extra ui
+uv run bladecaller
 ```
 
 Legacy (direct, always enables Govee):
@@ -231,6 +239,12 @@ All Chroma effects created at startup via `setup_chroma_effects()` in [league/co
 
 - Add event to `GameEventType` in [league/enums.py](league/enums.py) if missing. Value must be exact string Live Client API returns.
 - Register a callback via `watcher.on(GameEventType.<New>, cb)` in `run_companion` ([league/companion.py](src/league/companion.py)) for lighting. For console kill-feed output, add a handler + `watcher.on(...)` line in `register_event_feed` ([league/companion.py](src/league/companion.py)).
+
+## Bladecaller UI
+
+PySide6 desktop app (`bladecaller` gui-script, optional `ui` extra). Style is token-driven: colors/fonts/radii live in `src/league/bladecaller/resources/theme.py`, substituted into the `app.qss` template at load.
+
+**Working on the UI? Read [src/league/bladecaller/CLAUDE.md](src/league/bladecaller/CLAUDE.md)** — style system, selector table, `components.py` API, adding-a-page recipe, quirks.
 
 ## LCU Client
 

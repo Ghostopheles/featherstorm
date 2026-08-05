@@ -1,34 +1,329 @@
+/* Bladecaller stylesheet. Placeholders are substituted from resources/theme.py. */
+
+QWidget {
+    background: transparent;
+    color: $TEXT;
+    font-family: "$FONT_BODY";
+    font-size: ${FONT_SIZE}px;
+}
+
+QMainWindow, QWidget#root {
+    background: $BG0;
+}
+
+QToolTip {
+    background: $BG3;
+    color: $TEXT;
+    border: 1px solid $BORDER_BRIGHT;
+    border-radius: ${RADIUS_SM}px;
+    padding: 4px 8px;
+}
+
+/* ── SIDEBAR ──────────────────────────────────────────────────────────────── */
+
 QWidget#sidebar {
-    background: #1e1e2e;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 $SIDEBAR_TOP, stop:1 $SIDEBAR_BOTTOM);
+    border-right: 1px solid $BORDER;
 }
+
+QWidget#sidebarHeader {
+    border-bottom: 1px solid $BORDER;
+}
+
+QLabel#logoMark {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                                stop:0 $ACCENT, stop:1 $ACCENT2);
+    border-radius: 6px;
+}
+
+QLabel#appTitle {
+    font-family: "$FONT_DISPLAY";
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: $TEXT;
+}
+
+QLabel#appVersion {
+    font-size: 9px;
+    letter-spacing: 1px;
+    color: $TEXT3;
+}
+
 QListWidget#nav {
-    background: #1e1e2e;
-    border: none;
-    outline: none;
-    padding-top: 8px;
-}
-QListWidget#nav::item {
-    color: #a6adc8;
-    padding-left: 16px;
-    border-left: 3px solid transparent;
-}
-QListWidget#nav::item:hover {
-    background: #313244;
-}
-QListWidget#nav::item:selected {
-    background: #313244;
-    color: #cdd6f4;
-    border-left: 3px solid #89b4fa;
-}
-QToolButton#navSettings {
     background: transparent;
     border: none;
+    outline: none;
+    padding-top: 10px;
+}
+QListWidget#nav::item {
+    color: $TEXT2;
+    padding-left: 14px;
+    border-left: 2px solid transparent;
+    font-weight: 500;
+}
+QListWidget#nav::item:hover {
+    color: $TEXT;
+    background: $HOVER_WASH;
+}
+QListWidget#nav::item:selected {
+    color: $TEXT;
+    background: $ACCENT_WASH;
+    border-left: 2px solid $ACCENT;
+}
+
+QToolButton#navSettings {
+    background: transparent;
+    border: 1px solid transparent;
     border-radius: 6px;
 }
 QToolButton#navSettings:hover {
-    background: #313244;
+    background: $HOVER_WASH;
+    border-color: $BORDER;
 }
 QToolButton#navSettings:checked {
-    background: #313244;
-    border: 1px solid #89b4fa;
+    background: $ACCENT_WASH;
+    border-color: $ACCENT;
+}
+
+/* ── PAGES ────────────────────────────────────────────────────────────────── */
+
+QLabel#pageTitle {
+    font-family: "$FONT_DISPLAY";
+    font-size: 22px;
+    font-weight: 700;
+    color: $TEXT;
+}
+
+QLabel#pageSubtitle {
+    font-size: 12px;
+    color: $TEXT3;
+}
+
+QLabel#cardTitle, QLabel#sectionTitle {
+    font-family: "$FONT_DISPLAY";
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    color: $TEXT3;
+}
+
+QLabel#statValue {
+    font-family: "$FONT_DISPLAY";
+    font-size: 28px;
+    font-weight: 700;
+    color: $TEXT;
+}
+
+QLabel#statLabel, QLabel[muted="true"] {
+    font-size: 11px;
+    color: $TEXT3;
+}
+
+QFrame#card {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                                stop:0 $BG2, stop:1 $BG1);
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS}px;
+}
+
+QFrame#separator {
+    background: $BORDER;
+    border: none;
+}
+
+/* ── GROUPING ─────────────────────────────────────────────────────────────── */
+
+QGroupBox {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                                stop:0 $BG2, stop:1 $BG1);
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS}px;
+    margin-top: 12px;
+    padding: 18px 14px 12px 14px;
+    font-family: "$FONT_DISPLAY";
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: $TEXT2;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 12px;
+    padding: 0 6px;
+    background: $BG1;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_SM}px;
+}
+
+/* ── INPUTS ───────────────────────────────────────────────────────────────── */
+
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QPlainTextEdit, QTextEdit {
+    background: $BG2;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_SM}px;
+    color: $TEXT;
+    padding: 6px 9px;
+    selection-background-color: $ACCENT_DIM;
+    selection-color: $TEXT;
+}
+QLineEdit:hover, QSpinBox:hover, QDoubleSpinBox:hover, QComboBox:hover {
+    border-color: $BORDER_BRIGHT;
+}
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus,
+QPlainTextEdit:focus, QTextEdit:focus {
+    border-color: $ACCENT;
+}
+QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled {
+    color: $TEXT3;
+    background: $BG1;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 18px;
+}
+QComboBox::down-arrow {
+    image: url("$ICON_CHEVRON");
+    width: 10px;
+    height: 10px;
+}
+QComboBox QAbstractItemView {
+    background: $BG2;
+    border: 1px solid $BORDER_BRIGHT;
+    border-radius: ${RADIUS_SM}px;
+    outline: none;
+    padding: 4px;
+    selection-background-color: $ACCENT_WASH;
+    selection-color: $TEXT;
+}
+
+QSpinBox::up-button, QDoubleSpinBox::up-button,
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    background: $BG3;
+    border: none;
+    width: 14px;
+}
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+    background: $BG4;
+}
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
+    image: url("$ICON_CHEVRON_UP");
+    width: 8px;
+    height: 8px;
+}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+    image: url("$ICON_CHEVRON");
+    width: 8px;
+    height: 8px;
+}
+
+QCheckBox {
+    spacing: 8px;
+    color: $TEXT;
+}
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    border: 1px solid $BORDER_BRIGHT;
+    border-radius: ${RADIUS_SM}px;
+    background: $BG3;
+}
+QCheckBox::indicator:hover {
+    border-color: $ACCENT;
+}
+QCheckBox::indicator:checked {
+    background: $ACCENT;
+    border-color: $ACCENT;
+    image: url("$ICON_CHECK");
+}
+
+/* ── BUTTONS ──────────────────────────────────────────────────────────────── */
+
+QPushButton {
+    background: $BG3;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_SM}px;
+    color: $TEXT2;
+    padding: 6px 14px;
+    font-weight: 500;
+}
+QPushButton:hover {
+    background: $BG4;
+    border-color: $ACCENT;
+    color: $TEXT;
+}
+QPushButton:pressed {
+    background: $ACCENT_WASH;
+}
+QPushButton:disabled {
+    color: $TEXT3;
+    border-color: $BORDER_SOFT;
+}
+QPushButton[accent="true"] {
+    background: $ACCENT_WASH;
+    border-color: $ACCENT;
+    color: $ACCENT;
+    font-weight: 600;
+}
+QPushButton[accent="true"]:hover {
+    background: $ACCENT_GLOW;
+    color: $TEXT;
+}
+
+QToolButton {
+    background: $BG3;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_SM}px;
+    color: $TEXT2;
+    padding: 4px 8px;
+}
+QToolButton:hover {
+    background: $BG4;
+    border-color: $ACCENT;
+    color: $TEXT;
+}
+
+/* ── SCROLLING ────────────────────────────────────────────────────────────── */
+
+QScrollArea, QAbstractScrollArea {
+    background: transparent;
+    border: none;
+}
+
+QScrollBar:vertical {
+    background: transparent;
+    width: 6px;
+    margin: 0;
+}
+QScrollBar::handle:vertical {
+    background: $BG4;
+    border-radius: 3px;
+    min-height: 24px;
+}
+QScrollBar::handle:vertical:hover {
+    background: $ACCENT_DIM;
+}
+QScrollBar:horizontal {
+    background: transparent;
+    height: 6px;
+    margin: 0;
+}
+QScrollBar::handle:horizontal {
+    background: $BG4;
+    border-radius: 3px;
+    min-width: 24px;
+}
+QScrollBar::handle:horizontal:hover {
+    background: $ACCENT_DIM;
+}
+QScrollBar::add-line, QScrollBar::sub-line,
+QScrollBar::add-page, QScrollBar::sub-page {
+    background: none;
+    border: none;
+    height: 0;
+    width: 0;
 }
