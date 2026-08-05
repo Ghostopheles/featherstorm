@@ -9,6 +9,8 @@ uv run bladecaller
 
 Visual language derives from the design mockup at `ref/Featherstorm.html` (repo root) — dark violet/near-black surfaces, magenta accent, Barlow Semi Condensed for display text, Inter for body text.
 
+> **Never `Read` `ref/Featherstorm.html` whole — it is ~1.8 MB (fonts inlined as base64).** Grep it for the selector or CSS custom property you need. Everything already ported lives in [`resources/theme.py`](resources/theme.py); check there first.
+
 ## Layout
 
 ```
@@ -39,7 +41,9 @@ bladecaller/
 - **`resources/fonts/`** — bundled Inter (300–600) and Barlow Semi Condensed (400–700) TTFs, registered by `load_fonts()` *before* the stylesheet is applied. Extracted from the mockup's woff2 bundle; name records were normalized (nameID 16/17 = typographic family/subfamily) so Qt matches faces by `font-weight` rather than treating "Inter SemiBold" as a separate family.
 - **`resources/icons/`** — Feather-style 24×24 SVGs, stroke color baked into the file. `load_icon(name)` → `QIcon`; `icon_path(name)` → forward-slashed str for QSS `url()`.
 
-Startup order in [`ui/app.py`](ui/app.py) matters: `load_fonts()` → `setFont()` → `setStyleSheet()`.
+Startup order in [`ui/app.py`](ui/app.py) matters: `setStyle("Fusion")` → `load_fonts()` → `setFont()` → `setStyleSheet()`. The Fusion style is not cosmetic — the native Windows style ignores large parts of the QSS (sub-control rules like `QSpinBox::up-button`, `QComboBox::down-arrow`, `QCheckBox::indicator`). Any offscreen/test harness must set it too or the render won't match.
+
+Adding an icon that QSS references by `url()` takes two steps: drop the SVG in `resources/icons/`, then register it in the `tokens.update({...})` block of `load_stylesheet()` ([`resources/__init__.py`](resources/__init__.py)). Icons used only from Python (`load_icon(...)`) need no registration.
 
 ## Applying the style
 
@@ -61,6 +65,30 @@ Styling hangs off object names and Qt properties, not per-widget stylesheets:
 - **`Card(title=None, fill=False)`** — bordered surface; add to `card.body`. `fill=True` claims leftover vertical space, otherwise the card hugs its contents.
 - **`PageHeader`**, **`CardTitle`**, **`Separator`**, **`StatValue`**, **`StatLabel`**.
 
+## Verifying a change
+
+There are no UI tests (`pytest-qt` is a dev dep but `tests/` doesn't exist). The verification loop is a headless render — run it and `Read` the PNG:
+
+```bash
+QT_QPA_PLATFORM=offscreen uv run python -c "
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QFont
+from league.bladecaller.resources import load_fonts, load_stylesheet
+from league.bladecaller.resources.theme import FONT_BODY, FONT_SIZE
+from league.bladecaller.ui.main_window import MainWindow
+app = QApplication([])
+app.setStyle('Fusion'); load_fonts(); app.setFont(QFont(FONT_BODY, FONT_SIZE)); app.setStyleSheet(load_stylesheet())
+w = MainWindow(); w.show(); app.processEvents()
+w.grab().save('shot.png')
+"
+```
+
+Notes:
+- `app.processEvents()` before `grab()` — without it the layout hasn't settled and the image is blank/unstyled.
+- To shoot a specific page, `w.stack.setCurrentWidget(w.settings_page)` (or `setCurrentIndex`) before the grab.
+- `load_stylesheet()` alone catches the most common breakage, no Qt needed — a token missing from `theme.py` raises `KeyError`, a stray literal `$` raises `ValueError`. A malformed *rule*, by contrast, fails silently: Qt drops the declaration and prints nothing.
+- Lint is `uv run ruff check` / `uv run ruff format`; the rule set is deliberately tiny (`E9,F63,F7,F82`), line length 160, and `__init__.py` is excluded.
+
 ## Adding a page
 
 ```python
@@ -78,17 +106,27 @@ Register in `MainWindow._build_pages()`:
 self.add_page("My Page", MyPage(), load_icon("my-icon.svg"))
 ```
 
+**Nav row index and stack index are the same number** — `_on_nav_row_changed()` does `stack.setCurrentIndex(row)`. So every `add_page()` call must come *before* any other `stack.addWidget()`; `set_settings_page()` deliberately runs last in `_build_pages()` so the settings widget lands past the nav rows and is only reachable via `stack.setCurrentWidget()`. Insert a non-nav widget earlier and every nav row points at the wrong page.
+
+`_build_pages()` imports pages and `league.config` inside the function body, not at module scope — keeps `main_window` importable without dragging in the page tree. Follow that when registering new pages.
+
 ## Settings page
 
 [`ui/pages/settings.py`](ui/pages/settings.py) renders the whole TOML config (`league.config.get_full_config()`) generically — one `QGroupBox` per section, one row per key. Widget choice comes from the value's Python type, overridden per key by `SCHEMA` in [`core/settings_schema.py`](core/settings_schema.py) (`kind`, bounds, suffix, `as_str` for numeric-looking strings). Adding a config key needs no UI change; add a `SettingField` only when the inferred widget is wrong.
 
-`settings_applied` signal emits the edited dict — not yet wired to a writer.
+`settings_applied` signal emits the edited dict — **not yet wired to a writer**. Nothing connects it, so Apply is a no-op today. The writer would be `league.config.set(key, value, category)` inside a `with league.config.batch():` block (batch defers the TOML write until the outermost context exits — see [`league/config.py`](../config.py)).
+
+`get_full_config()` returns the module's live `_cache` dict, not a copy — `SettingsPage` deepcopies it into `self._defaults`. "Restore defaults" therefore restores *the values as of page construction*, not the schema defaults from `config.init()`.
+
+Widget dispatch order in [`ui/settings/editors.py`](ui/settings/editors.py) is load-bearing: `kind` overrides first, then `bool` **before** `int` (`bool` subclasses `int`), then `as_str`, then `int`/`float`, `QLineEdit` last. A new widget type means adding to the `Kind` `Literal` in `core/settings_schema.py` plus a branch near the top of `make_editor()`. Every branch returns an `Editor(widget, get, set)` — `get`/`set` must round-trip the config's original Python type (that's what `as_str` exists for).
 
 ## Quirks
 
-- Qt stylesheets have no variables — that's why `app.qss` is templated. Adding a color means adding it to `theme.py`, nothing else.
+- Qt stylesheets have no variables — that's why `app.qss` is templated. Adding a color means adding it to `theme.py`, nothing else. `TOKENS` is built by scanning `globals()` for uppercase names, so a new token needs no registration — but it also means non-color constants (`SIDEBAR_WIDTH`, `FONT_SIZE`) are tokens too, and are imported directly as Python where Qt needs a number.
+- QSS is not CSS. No `box-shadow`, no `transition`/animation, no `transform`, no `gap`, no `calc()`, no `oklch()`, no `:has()`/`>`/sibling combinators, no `::before`/`::after`. Porting anything from the mockup means picking a Qt-expressible stand-in (usually `qlineargradient`, a border color, or a layout margin). Qt's shorthand parsing is also stricter — prefer explicit `border-color` / `padding` longhands when a rule silently does nothing.
+- Dynamic Qt properties used as selectors (`accent`, `muted`) only restyle at polish time. Setting one *after* the widget is shown needs `w.style().unpolish(w); w.style().polish(w)`. Existing code sets them at construction, so it hasn't bitten yet.
 - The settings gear lives at the *bottom* of the sidebar (`#navSettings`), separate from the nav list; selecting a nav row unchecks it and vice versa.
 - Sidebar version string comes from `importlib.metadata.version("featherstorm")`, falling back to `"dev"` when the package isn't installed.
 - `Card` defaults to `QSizePolicy.Maximum` vertically. Without that a `Preferred` card swallows the space a trailing `addStretch()` was meant to take.
-- Offscreen render for visual checks: `QT_QPA_PLATFORM=offscreen`, then `window.grab().save(path)`.
-- This file is excluded from built wheels/sdists via `wheel-exclude`/`source-exclude` in the root `pyproject.toml`.
+- Offscreen render for visual checks: `QT_QPA_PLATFORM=offscreen`, then `window.grab().save(path)` — see [Verifying a change](#verifying-a-change) for the full command.
+- PySide6 is an *optional* dep (`ui` extra). Nothing under `bladecaller/` may be imported from `league.cli`, `league.companion`, or any other non-UI module — `launch_ui()` in [`__init__.py`](__init__.py) is the only entry point and it catches the `ImportError`. Import in the other direction (UI → `league.config` etc.) is fine.
