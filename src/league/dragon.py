@@ -18,10 +18,12 @@ RAW_BASE_URL = "https://ddragon.leagueoflegends.com"
 OFFICIAL_BASE_URL = RAW_BASE_URL + "/cdn/{version}"
 COMMUNITY_BASE_URL = "https://cdn.communitydragon.org/{version}"
 
+
 class ArtAssetType(StrEnum):
     splash = "splash"
     loading = "loading"
     square = "square"
+
 
 class DataDragon(BaseAPIClient):
     locale: str = "en_US"
@@ -81,7 +83,9 @@ class DataDragon(BaseAPIClient):
 
         for name, entry in data.items():
             key = int(entry["key"])
-            lookup["by-id"][key] = name
+            # str keys, because the lookups below index with str(championID) and a
+            # JSON round-trip through the cache stringifies them anyway
+            lookup["by-id"][str(key)] = name
             lookup["by-name"][name] = key
 
         return lookup

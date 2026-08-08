@@ -49,7 +49,7 @@ league-of-snakes/
 │   │   ├── riot.py       # riot_app (matches, match, timeline, puuid, ranked, live-game)
 │   │   ├── highlights.py # highlights_app
 │   │   └── dragon.py     # dragon_app (item, champion, art)
-│   ├── bladecaller/      # PySide6 desktop UI — see src/league/bladecaller/CLAUDE.md
+│   ├── bladecaller/      # PySide6 desktop UI (Dashboard, Match History, Settings) — see src/league/bladecaller/CLAUDE.md
 │   ├── discord/
 │   │   ├── presence.py         # DiscordRichPresence, DiscordActivity — generic pypresence wrapper
 │   │   └── league_presence.py  # LeagueRichPresence — League-aware presence (lobby/in-game status, KDA, skin art, role icon)
@@ -134,6 +134,8 @@ Categories and keys:
 - `highlights.export_audio_quality` (default `'192k'`) — audio bitrate
 - `meta.cache_dir` — cache directory for Data Dragon and other metadata
 - `bladecaller.status_poll_interval` (default `3.0`s) — how often the UI sidebar indicator polls the LCU gameflow phase
+- `bladecaller.match_history_page_size` (default `20`) — matches fetched per "Load more" on the Match History page
+- `bladecaller.dashboard_recent_matches` (default `5`) — rows shown in the dashboard's Recent Matches card
 
 Manage via CLI:
 ```bash
@@ -248,6 +250,8 @@ PySide6 desktop app (`bladecaller` gui-script, optional `ui` extra). Style is to
 
 Qt and asyncio share one loop via `qasync`, so controllers `await` the async backend directly with no threading. `ClientStatusController` (`bladecaller/controllers/client_status.py`) polls the LCU gameflow phase and drives the sidebar status dot.
 
+Pages: **Dashboard** (Recent Matches card) and **Match History** (paged, filterable list; rows expand to stat tiles, a 10-player scoreboard and build order), plus Settings. `MatchHistoryController` (`bladecaller/controllers/match_history.py`) feeds both — the list comes from the LCU (no API key), and expanding a row fetches the full lobby from Riot MATCH-V5, degrading to LCU-only stats when `RIOT_API_KEY` is unset.
+
 **Working on the UI? Read [src/league/bladecaller/CLAUDE.md](src/league/bladecaller/CLAUDE.md)** — style system, selector table, `components.py` API, adding-a-page recipe, quirks.
 
 ## LCU Client
@@ -327,6 +331,8 @@ Other methods:
 - Govee local IP auto-detection in `govee/shared.py` uses socket to `8.8.8.8:80`. May fail on isolated networks — hardcode `LISTEN_ADDR` in `../govee/src/govee/shared.py` if needed.
 - Govee discovery is periodic (every 180s); allow 0.5–2s after `listener.start()` before accessing `listener.devices`. New network devices may take up to 3 minutes.
 - Govee sends fire-and-forget — no confirmation device received command.
+- LCU match history (`/lol-match-history/v1/products/lol/current-summoner/matches`) returns **only the current summoner's participant** per game, not the full lobby — see the fixtures in `ref/`. The ten-player scoreboard has to come from Riot MATCH-V5 (`RiotAPIClient.get_player_match()`); the match id is `f"{platformId}_{gameId}"`.
+- `DataDragon._make_champion_lookup()` stores `by-id` keys as **strings**. `get_champion_name()` / `get_champion()` index with `str(championID)`, and the JSON cache round-trip stringifies them anyway — int keys silently broke every lookup on the run that first built the cache.
 - Upgrading Data Dragon version in `dragon.py`: test `get_item()` against a few items (e.g. `1001` Boots, `1054` Doran's Blade) — new CDN response fields cause `TypeError` on construction since `DragonItem` uses `**data` unpacking.
 - LCU websocket callbacks must be registered **before** `connect()` — `LCUWebsocketClient.on()` raises once the listen task exists. `run_companion()` therefore calls `register_gameflow_events()` before starting the watcher.
 - LCU websocket event names derive from endpoint paths: slashes → underscores, prefixed `OnJsonApiEvent` (e.g. `/lol-lobby/v2/lobby` → `OnJsonApiEvent_lol-lobby_v2_lobby`).

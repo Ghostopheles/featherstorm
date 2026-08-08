@@ -18,6 +18,9 @@ FALLBACK_LOCKFILE_PATH = Path("F:/Games/League of Legends/lockfile")
 
 RIOT_USERNAME = "riot"
 
+DEFAULT_MATCH_HISTORY_COUNT = 20
+
+
 @dataclass(frozen=True, slots=True)
 class LCULockfileData:
     ProcessName: str
@@ -167,12 +170,9 @@ class LCUClient(BaseAPIClient):
         queue_type: Optional[Queue] = None,
     ) -> LCUMatchHistory:
         if end_index is None:
-            end_index = start_index + count
+            end_index = start_index + (count if count is not None else DEFAULT_MATCH_HISTORY_COUNT)
 
-        params = {
-            "begIndex": start_index,
-            "endIndex": end_index
-        }
+        params = {"begIndex": start_index, "endIndex": end_index}
         res = await self.get("/lol-match-history/v1/products/lol/current-summoner/matches", params=params)
 
         history = LCUMatchHistory(**res)

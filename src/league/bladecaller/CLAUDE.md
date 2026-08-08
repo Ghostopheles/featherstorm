@@ -21,9 +21,11 @@ bladecaller/
 ├── __init__.py      # launch_ui() — imports ui.app lazily, errors if `ui` extra missing
 ├── core/
 │   ├── settings_schema.py  # SettingField/SCHEMA/SECTION_LABELS — widget hints per config key
-│   └── status.py           # ClientStatus + STATUS_LABELS/STATUS_TOOLTIPS for the sidebar indicator
+│   ├── status.py           # ClientStatus + STATUS_LABELS/STATUS_TOOLTIPS for the sidebar indicator
+│   └── match.py            # MatchSummary / MatchDetail / ScoreRow view models (no Qt)
 ├── controllers/     # page ↔ backend wiring
-│   └── client_status.py    # ClientStatusController — polls LCU gameflow phase, emits ClientStatus
+│   ├── client_status.py    # ClientStatusController — polls LCU gameflow phase, emits ClientStatus
+│   └── match_history.py    # MatchHistoryController — LCU match list + Riot per-match expansion
 ├── qt/              # (empty)
 ├── resources/
 │   ├── __init__.py  # load_stylesheet(), load_fonts(), load_icon(), icon_path(), app_version()
@@ -32,10 +34,13 @@ bladecaller/
 │   ├── fonts/       # bundled Inter + Barlow Semi Condensed TTFs
 │   └── icons/       # feather (logo), gear, chevrons, check, nav icons (SVG)
 └── ui/
-    ├── app.py       # run() — QApplication setup, font/stylesheet install
+    ├── app.py       # run() — QApplication setup, font/stylesheet install, controller wiring
     ├── main_window.py  # MainWindow + SidebarHeader (logo/title) + SidebarStatus (client state)
-    ├── components.py   # Page, PageHeader, Card, CardTitle, Separator, StatValue, StatLabel
-    ├── pages/       # DashboardPage, SettingsPage
+    ├── components.py   # Page, PageHeader, Card, CardTitle, Separator, StatValue, StatLabel,
+    │                   #   Badge, StatTile, ScrollColumn, repolish()
+    ├── icons.py     # IconProvider — async disk-cached champion/item/spell pixmaps; run_async()
+    ├── widgets/     # ChampionIcon, MatchRow, MatchDetailPanel, MatchEntry, Scoreboard
+    ├── pages/       # DashboardPage, MatchHistoryPage, SettingsPage
     └── settings/    # editors.py — make_editor() maps config values to widgets
 ```
 
@@ -62,15 +67,25 @@ Styling hangs off object names and Qt properties, not per-widget stylesheets:
 | `#nav`, `#navSettings` | Nav list + gear button |
 | `#pageTitle`, `#pageSubtitle` | Page header text |
 | `#card`, `#cardTitle`, `#sectionTitle` | Card surfaces |
-| `#statValue`, `#statLabel` | Stat readouts |
+| `#statValue`, `#statLabel`, `#statTile` | Stat readouts |
 | `QPushButton[accent="true"]` | Primary action button |
 | `QLabel[muted="true"]` | De-emphasized text |
+| `#badge[variant="win\|loss\|gold\|purple"]` | Result / status pill |
+| `#matchRow` (+ `[expanded="true"]`), `#matchAccent[result="win\|loss"]` | Match list row |
+| `#matchChamp`, `#matchKda`, `#matchMeta`, `#matchDetail` | Match row text + expanded body |
+| `#championIcon`, `#itemSquare[empty="true"]` | Art placeholders |
+| `#scoreRow[you="true"]`, `#scoreHeader`, `#scoreName`, `#scoreKills`, `#scoreDeaths`, `#scoreAssists`, `#scoreGold` | Scoreboard grid |
+| `#teamPill[team="blue\|red"]` | Scoreboard team headers |
+| `#filterChip[active="true"]` | Match history filter chips |
+| `#splitBar`, `#splitFill` | Win/loss split bar |
 
 [`ui/components.py`](ui/components.py) wraps these:
 
 - **`Page(title, subtitle)`** — standard page shell; subclass and add to `self.content`.
 - **`Card(title=None, fill=False)`** — bordered surface; add to `card.body`. `fill=True` claims leftover vertical space, otherwise the card hugs its contents.
-- **`PageHeader`**, **`CardTitle`**, **`Separator`**, **`StatValue`**, **`StatLabel`**.
+- **`ScrollColumn()`** — the design's `.grow-scroll`; `add(widget)` inserts above a trailing stretch, `clear()` empties it. Scrollbar styling is already in `app.qss`.
+- **`Badge(text, variant)`**, **`StatTile(value, label)`**, **`PageHeader`**, **`CardTitle`**, **`Separator`**, **`StatValue`**, **`StatLabel`**.
+- **`repolish(widget)`** — re-applies the stylesheet after a dynamic property used as a selector changes. Use it any time a `[prop="…"]` selector is set after construction.
 
 ## Event loop
 
@@ -140,6 +155,8 @@ self.add_page("My Page", MyPage(), load_icon("my-icon.svg"))
 
 **Nav row index and stack index are the same number** — `_on_nav_row_changed()` does `stack.setCurrentIndex(row)`. So every `add_page()` call must come *before* any other `stack.addWidget()`; `set_settings_page()` deliberately runs last in `_build_pages()` so the settings widget lands past the nav rows and is only reachable via `stack.setCurrentWidget()`. Insert a non-nav widget earlier and every nav row points at the wrong page.
 
+Current nav order is `0` Dashboard, `1` Match History. `DashboardPage.show_match_history` is connected to `nav.setCurrentRow(1)` — adding a page above Match History means updating that row number too. Pages that `ui/app.py` needs to wire are kept as attributes (`self.dashboard`, `self.match_history`).
+
 `_build_pages()` imports pages and `league.config` inside the function body, not at module scope — keeps `main_window` importable without dragging in the page tree. Follow that when registering new pages.
 
 ## Status indicator
@@ -172,7 +189,36 @@ Probing the Live Client API (`127.0.0.1:2999`) costs **~2s per poll** when no ga
 
 Note `LCUClient.__init__` raises if the lockfile is missing, so a controller can never hold one from startup — `_get_phase()` builds it lazily on first success.
 
+**[`MatchHistoryController`](controllers/match_history.py)** — feeds both the Match History page and the dashboard's Recent Matches card. Signals: `matches_loaded(list)` (a page of `MatchSummary`, append semantics), `load_failed(str)`, `detail_loaded(game_id, MatchDetail)`, `detail_failed(game_id, str)`. `load_page()` pulls the next `bladecaller.match_history_page_size` entries; `load_detail(game_id)` expands one, memoised in a dict.
+
+Two data sources, on purpose:
+
+| Source | Gives | Cost |
+|--------|-------|------|
+| `LCUClient.get_match_history()` | the **current summoner only** — one participant per game | none; no API key, no rate limit |
+| `RiotAPIClient.get_player_match()` | all ten participants + `challenges.killParticipation` | needs `RIOT_API_KEY`, rate-limited |
+
+The LCU list endpoint genuinely returns a single participant per game (see `ref/lcu_match_history.json`), which is why the full scoreboard has to come from MATCH-V5. No puuid lookup is needed: the match id is `f"{platformId}_{gameId}"` and the puuid comes from `participantIdentities[0].player.puuid`.
+
+With no key (or on a failed request) the controller emits `MatchDetail.from_summary(...)` instead — the four stat tiles and build order still render from the LCU stats, Kill Participation shows `—`, and a muted note replaces the scoreboard. The panel never blanks.
+
+It builds its own `RiotAPIClient` from `load_dotenv()` + `os.getenv`. **Don't reach for `league.cli._shared._riot_client()`** — it raises `typer.Exit` and pulls typer into the UI.
+
 Adding another controller: same shape (`QObject` + signal, asyncio task, no Qt widgets), constructed and connected in `ui/app.py`.
+
+## Match history
+
+[`core/match.py`](core/match.py) holds the view models, and no widget touches `LCUMatch` / `PlayerMatch` directly:
+
+- **`MatchSummary.from_lcu(LCUMatch)`** — one collapsed row. Derived text lives on properties (`kda_text`, `kda_ratio_text`, `cs_per_min`, `duration_text`, `relative_time`, `queue_name`, `meta_text`), so formatting is testable without Qt.
+- **`MatchDetail`** — `from_player_match()` (full scoreboard) or `from_summary()` (degraded).
+- **`ScoreRow`** — one scoreboard line; holds `champion_id` *or* `champion_name`, since the LCU reports ids and Riot reports names.
+
+[`ui/widgets/match_row.py`](ui/widgets/match_row.py) has `MatchEntry` = `MatchRow` + `MatchDetailPanel` stacked. `MatchRow(compact=…)` drops the trailing stat columns for the dashboard; `expandable=False` makes a click emit `activated` instead of toggling, which is how the dashboard jumps to the page.
+
+[`ui/pages/match_history.py`](ui/pages/match_history.py) filters client-side over the loaded summaries (All/Wins/Losses chips + a queue combo) and recomputes the summary card from the *filtered* set. Only one row is expanded at a time.
+
+Art comes from [`ui/icons.py`](ui/icons.py). The loading, disk cache and scaling are real, but the three URL builders at the bottom (`_champion_square_url`, `_item_icon_url`, `_spell_icon_url`) are **stubs returning `None`** — `DataDragon` has no item/spell icon fetchers yet. Every caller falls back to its placeholder (champion tiles show the first two letters, item squares stay empty), so filling those in later is a one-liner each and needs no widget change.
 
 `LeagueEventBridge` ([`league/bridge.py`](../bridge.py)) is the eventual home for live match events, but it builds its `LCUClient` once in `__init__` and permanently disables out-of-game events if the client wasn't running then — unusable for a desktop app that starts before League. Fix that before wiring the bridge into the UI.
 
@@ -196,5 +242,10 @@ Widget dispatch order in [`ui/settings/editors.py`](ui/settings/editors.py) is l
 - **A `QWidget` *subclass* does not paint its QSS `background`/`border` unless it sets `Qt.WA_StyledBackground`.** Plain `QWidget()` instances get the attribute automatically when a rule matches, which is why `#sidebar`/`#sidebarFooter` work untouched while `SidebarHeader`/`SidebarStatus` set it explicitly. A border that silently doesn't render is almost always this.
 - Sidebar divider lines use the `DIVIDER` token, not `BORDER` — `BORDER` (18% alpha) is invisible against the sidebar gradient.
 - `Card` defaults to `QSizePolicy.Maximum` vertically. Without that a `Preferred` card swallows the space a trailing `addStretch()` was meant to take.
+- **League `gameId`s exceed 32 bits.** A `Signal(int)` is a C++ `int` and raises `OverflowError` on emit. Pass game ids as `Signal(object)` — every match-history signal does.
+- **`QScrollArea` sizes its widget to `minimumSizeHint()`, not `sizeHint()`**, and nested layouts report a smaller minimum than they need — rows get squeezed or overlap. Fix is `layout.setSizeConstraint(QLayout.SetMinimumSize)` on the scrolled column *and* on each row/panel inside it; `ScrollColumn`, `MatchRow`, `MatchDetailPanel` and `MatchEntry` all set it. Their vertical policy is `Minimum` (never shrink below the hint), not `Maximum`.
+- **`deleteLater()` alone doesn't remove a widget from view.** Taking it out of a layout leaves it parented and painting at its last geometry until the event loop destroys it, so a rebuilt panel renders its old contents underneath. Call `widget.setParent(None)` first — `ScrollColumn.clear()` and `_clear_layout()` both do.
+- Widgets are often constructed before `loop.run_forever()` starts, so `run_async()` ([`ui/icons.py`](ui/icons.py)) falls back to the loop `ui/app.py` *set* when none is *running*. A task created on a not-yet-running loop simply waits for it; `asyncio.get_running_loop()` alone would silently drop every fetch.
+- Python 3.14 (PEP 758) allows unparenthesized `except A, B:`, and `ruff format` strips the parens. That is valid, not a syntax error — don't "fix" it back.
 - Offscreen render for visual checks: `QT_QPA_PLATFORM=offscreen`, then `window.grab().save(path)` — see [Verifying a change](#verifying-a-change) for the full command.
 - PySide6 is an *optional* dep (`ui` extra). Nothing under `bladecaller/` may be imported from `league.cli`, `league.companion`, or any other non-UI module — `launch_ui()` in [`__init__.py`](__init__.py) is the only entry point and it catches the `ImportError`. Import in the other direction (UI → `league.config` etc.) is fine.

@@ -47,6 +47,18 @@ RED = "#ee343b"
 GREEN = "#31aa40"
 BLUE = "#0099f0"
 
+# ── match results ─────────────────────────────────────────────────────────────
+WIN_WASH = "rgba(49, 170, 64, 20%)"
+WIN_BORDER = "rgba(49, 170, 64, 30%)"
+LOSS_WASH = "rgba(238, 52, 59, 20%)"
+LOSS_BORDER = "rgba(238, 52, 59, 30%)"
+
+BLUE_TEAM_WASH = "rgba(0, 153, 240, 6%)"
+RED_TEAM_WASH = "rgba(238, 52, 59, 6%)"
+
+GOLD_TEXT_WASH = "rgba(248, 171, 79, 15%)"
+ACCENT2_TEXT_WASH = "rgba(130, 103, 226, 12%)"
+
 # ── typography ────────────────────────────────────────────────────────────────
 FONT_BODY = "Inter"
 FONT_DISPLAY = "Barlow Semi Condensed"

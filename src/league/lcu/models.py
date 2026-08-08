@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 from league.enums import Queue, Map
 
+
 @dataclass
 class MyChampSelection:
     assignedPosition: str
@@ -79,6 +80,7 @@ class LCURole(StrEnum):
     DUOSUPPORT = "DUO_SUPPORT"
     SOLO = "SOLO"
     SUPPORT = "SUPPORT"
+    CARRY = "CARRY"
     UNKNOWN = "NONE"
 
 
@@ -110,6 +112,7 @@ PlayerRoleMapping = {
     (LCULane.NONE, LCURole.DUO): LCUPosition.Unknown,
     (LCULane.NONE, LCURole.SUPPORT): LCUPosition.Unknown,
 }
+
 
 @dataclass
 class MatchPlayer:
@@ -256,6 +259,7 @@ class ParticipantStats:
     wardsPlaced: int
     win: bool
 
+
 @dataclass
 class ParticipantTimeline:
     participantId: int
@@ -345,6 +349,7 @@ class LCUMatch:
         self.queueId = Queue(self.queueId)
         self.teams = [MatchTeam(**t) for t in self.teams]
 
+
 @dataclass
 class LCUGames:
     gameBeginDate: str
@@ -361,6 +366,7 @@ class LCUGames:
         self.games = new
         self.gameCount = len(new)
 
+
 @dataclass
 class LCUMatchHistory:
     accountId: int
@@ -370,7 +376,7 @@ class LCUMatchHistory:
     def __post_init__(self):
         self.games = LCUGames(**self.games)
 
-    def get_matches_by_map_queue_type(self, queue_type: Queue) -> list[LCUMatch]:
+    def get_matches_by_queue_type(self, queue_type: Queue) -> list[LCUMatch]:
         return [m for m in self.games.games if m.queueId == queue_type]
 
 
@@ -438,6 +444,7 @@ class LCUTimeline:
     def __post_init__(self):
         self.frames = [LCUTimelineFrame(**f) for f in self.frames]
 
+
 class LCUReplayState(StrEnum):
     Download = "download"
     Downloading = "downloading"
@@ -451,6 +458,7 @@ class LCUReplayState(StrEnum):
     Watch = "watch"
     Checking = "checking"
 
+
 class LCUReplayDownloadStatus(Enum):
     Success = 1
     Retry = 2
@@ -458,10 +466,12 @@ class LCUReplayDownloadStatus(Enum):
     Downloading = 4
     NotStarted = 5
 
+
 @dataclass
 class LCUInventoryItemRarity:
     rarity: int
     region: str
+
 
 @dataclass
 class LCUInventoryItem:
@@ -530,8 +540,9 @@ class LCUInventoryItem:
     image: str | None = None
     passType: str | None = None
 
+
 class LCUGameflowPhase(StrEnum):
-    Home = "None" # TODO: help
+    Home = "None"  # TODO: help
     Lobby = "Lobby"
     Matchmaking = "Matchmaking"
     ReadyCheck = "ReadyCheck"

@@ -34,7 +34,11 @@ DEFAULT_CONFIG = {
         "export_path": "X:/featherstorm/data/highlights",
     },
     "discord": {"enable_rich_presence": True, "app_id": "1524125882795692146"},
-    "bladecaller": {"status_poll_interval": 3.0},
+    "bladecaller": {
+        "status_poll_interval": 3.0,
+        "match_history_page_size": 20,
+        "dashboard_recent_matches": 5,
+    },
 }
 
 _cache: dict | None = None

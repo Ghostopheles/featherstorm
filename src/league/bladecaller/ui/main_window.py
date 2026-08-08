@@ -184,9 +184,17 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentWidget(self.settings_page)
 
     def _build_pages(self):
-        from league.bladecaller.ui.pages import DashboardPage, SettingsPage
+        from league.bladecaller.ui.pages import DashboardPage, MatchHistoryPage, SettingsPage
 
-        self.add_page("Dashboard", DashboardPage(), load_icon("layout-dashboard.svg"))
+        self.dashboard = DashboardPage()
+        self.match_history = MatchHistoryPage()
+
+        # nav row index and stack index are the same number, so every add_page()
+        # must come before any other stack.addWidget()
+        self.add_page("Dashboard", self.dashboard, load_icon("layout-dashboard.svg"))
+        self.add_page("Match History", self.match_history, load_icon("history.svg"))
+
+        self.dashboard.show_match_history.connect(lambda: self.nav.setCurrentRow(1))
 
         from league.config import get_full_config
 
