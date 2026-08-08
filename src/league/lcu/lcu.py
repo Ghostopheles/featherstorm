@@ -285,6 +285,3 @@ class LCUClient(BaseAPIClient):
 
     async def get_gameflow_session(self):
         return await self.get(f"/lol-gameflow/v1/session")
-
-    async def get_lobby(self):
-        return await self.get("/lol-lobby/v2/lobby")
