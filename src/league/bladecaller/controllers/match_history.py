@@ -1,4 +1,5 @@
 import os
+import httpx
 import asyncio
 
 from pathlib import Path
@@ -8,6 +9,7 @@ from PySide6.QtCore import QObject, Signal
 
 from league import config
 from league.lcu import LCUClient
+from league.console import log_error
 from league.riot_api import RiotAPIClient
 from league.bladecaller.core.match import MatchSummary, MatchDetail
 
@@ -16,6 +18,12 @@ DEFAULT_PAGE_SIZE = 20
 NO_LCU_MESSAGE = "League client not running"
 NO_KEY_MESSAGE = "Full scoreboard needs RIOT_API_KEY in .env"
 RIOT_FAILED_MESSAGE = "Riot API request failed — showing your stats only"
+UNAVAILABLE_MESSAGE = "Riot doesn't serve this queue — showing your stats only"
+
+# MATCH-V5 answers 403 for queues it doesn't publish (Brawl, most RGMs) and 404
+# for custom / Practice Tool games. Neither is retryable, and neither means the
+# key is bad — so they must not drop the cached client the way a real fault does.
+UNAVAILABLE_STATUSES = {403, 404}
 
 
 class MatchHistoryController(QObject):
@@ -121,13 +129,22 @@ class MatchHistoryController(QObject):
 
         detail = MatchDetail.from_summary(summary, note=NO_KEY_MESSAGE)
         try:
-            riot = self._get_riot()
+            riot = await self._get_riot()
             if riot is not None:
-                player_match = await riot.get_player_match(summary.match_id, summary.puuid)
-                detail = MatchDetail.from_player_match(game_id, player_match)
+                # `get_player_match` keys off a puuid, which the LCU can't supply —
+                # it anonymizes them per match — so the narrowing happens here
+                match = await riot.get_match(summary.match_id)
+                detail = MatchDetail.from_match(summary, match)
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code not in UNAVAILABLE_STATUSES:
+                await self._drop_riot()
+                detail = MatchDetail.from_summary(summary, note=RIOT_FAILED_MESSAGE)
+            else:
+                detail = MatchDetail.from_summary(summary, note=UNAVAILABLE_MESSAGE)
+        except Exception as exc:
+            log_error(f"[error]Match detail for {summary.match_id} failed[/]: {exc!r}", show_locals=False, show_traceback=False)
             await self._drop_riot()
             detail = MatchDetail.from_summary(summary, note=RIOT_FAILED_MESSAGE)
 
@@ -137,19 +154,22 @@ class MatchHistoryController(QObject):
     async def _get_lcu(self) -> LCUClient | None:
         if self._lcu is None:
             try:
-                self._lcu = LCUClient(client_install_path=Path(config.get("lcu.client_install_path")))
+                # off-thread: the ctor builds two httpx clients, and each SSL context
+                # costs ~0.4s of blocking work against the Windows cert store
+                self._lcu = await asyncio.to_thread(LCUClient, client_install_path=Path(config.get("lcu.client_install_path")))
             except Exception:
                 # lockfile missing — League isn't running yet, retry on the next call
                 return None
         return self._lcu
 
-    def _get_riot(self) -> RiotAPIClient | None:
+    async def _get_riot(self) -> RiotAPIClient | None:
         if self._riot is None and not self._riot_checked:
             self._riot_checked = True
             load_dotenv()
             api_key = os.getenv("RIOT_API_KEY")
             if api_key:
-                self._riot = RiotAPIClient(api_key)
+                # same blocking SSL context cost as the LCU client above
+                self._riot = await asyncio.to_thread(RiotAPIClient, api_key)
         return self._riot
 
     async def _drop_lcu(self):

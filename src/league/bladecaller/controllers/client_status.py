@@ -69,7 +69,9 @@ class ClientStatusController(QObject):
     async def _get_phase(self) -> LCUGameflowPhase | None:
         if self._lcu is None:
             try:
-                self._lcu = LCUClient(client_install_path=Path(config.get("lcu.client_install_path")))
+                # off-thread: the ctor builds two httpx clients, and each SSL context
+                # costs ~0.4s of blocking work against the Windows cert store
+                self._lcu = await asyncio.to_thread(LCUClient, client_install_path=Path(config.get("lcu.client_install_path")))
             except Exception:
                 return None
         try:

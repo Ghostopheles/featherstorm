@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from league.enums import Queue
 from league.enums.queues import QUEUE_DESCRIPTION
 from league.lcu.models import LCUMatch
-from league.models import PlayerMatch, ParticipantSummary
+from league.models import Match, PlayerMatch, ParticipantSummary
 
 BLUE_TEAM_ID = 100
 
@@ -81,6 +81,7 @@ class MatchSummary:
     game_id: int
     platform_id: str
     puuid: str
+    participant_id: int
     champion_id: int
     queue: Queue
     win: bool
@@ -101,12 +102,13 @@ class MatchSummary:
     def from_lcu(cls, match: LCUMatch) -> "MatchSummary":
         participant = match.participants[0]
         stats = participant.stats
-        identity = match.participantIdentities[0].player
+        identity = match.participantIdentities[0]
 
         return cls(
             game_id=match.gameId,
             platform_id=match.platformId,
-            puuid=identity.puuid,
+            puuid=identity.player.puuid,
+            participant_id=identity.participantId,
             champion_id=participant.championId,
             queue=match.queueId,
             win=stats.win,
@@ -212,6 +214,14 @@ class MatchDetail:
         )
 
     @classmethod
+    def from_match(cls, summary: MatchSummary, match: Match) -> "MatchDetail":
+        """Full path — a MATCH-V5 payload narrowed to the summary's player."""
+        puuid = _riot_puuid_for(match, summary.participant_id)
+        if puuid is None:
+            raise ValueError(f"participant {summary.participant_id} not present in {match.metadata.matchId}")
+        return cls.from_player_match(summary.game_id, PlayerMatch.from_match(match, puuid))
+
+    @classmethod
     def from_player_match(cls, game_id: int, match: PlayerMatch) -> "MatchDetail":
         player = match.player
         participants = [player, *match.teammates, *match.enemies]
@@ -234,6 +244,19 @@ class MatchDetail:
         if self.kill_participation is None:
             return "—"
         return f"{self.kill_participation * 100:.0f}%"
+
+
+def _riot_puuid_for(match: Match, participant_id: int) -> Optional[str]:
+    """Find the queried player's real puuid inside a MATCH-V5 payload.
+
+    The LCU reports an anonymized per-match UUID where Riot reports the account's
+    78-character puuid, so the two never compare equal — `participantId` is the
+    only field that lines the two sources up.
+    """
+    for participant in match.info.participants:
+        if participant.participantId == participant_id:
+            return participant.puuid
+    return None
 
 
 def _score_rows(participants: list[ParticipantSummary], puuid: str) -> list[ScoreRow]:

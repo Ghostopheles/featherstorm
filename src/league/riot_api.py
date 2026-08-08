@@ -155,7 +155,13 @@ class RiotAPIClient(BaseAPIClient):
         return await self.get(f"/lol/match/v5/matches/by-puuid/{puuid}/ids", params=params)
 
     async def get_match(self, match_id: str) -> Match:
-        data = await self.get(f"/lol/match/v5/matches/{match_id}")
+        # surface the transport error instead of feeding None to pydantic — callers
+        # need the status code to tell "unavailable" apart from "broken"
+        data = await self.get(f"/lol/match/v5/matches/{match_id}", _return_exception=True)
+        if isinstance(data, Exception):
+            raise data
+        if data is None:
+            raise ValueError(f"No match data returned for {match_id}")
         return Match.model_validate(data)
 
     async def get_player_match(self, match_id: str, puuid: str) -> PlayerMatch:
@@ -167,12 +173,12 @@ class RiotAPIClient(BaseAPIClient):
         return MatchTimeline.model_validate(data)
 
     async def get_recent_matches(
-            self,
-            puuid: str,
-            count: int = 3,
-            match_type: MatchType = MatchType.Normal,
-            queue_type: Optional[Queue] = None,
-        ) -> list[PlayerMatch]:
+        self,
+        puuid: str,
+        count: int = 3,
+        match_type: MatchType = MatchType.Normal,
+        queue_type: Optional[Queue] = None,
+    ) -> list[PlayerMatch]:
         match_ids = await self.get_match_ids(puuid, count=count, match_type=match_type, queue_type=queue_type)
         if not match_ids:
             return None
@@ -189,13 +195,7 @@ class RiotAPIClient(BaseAPIClient):
         data = await self.get(f"/lol/match/v5/matches/by-puuid/{puuid}/replays")
         return data
 
-    async def get_ranked_data(
-        self,
-        queue: RankedQueueType,
-        tier: RankedTier,
-        division: RankedDivision,
-        page: int = 1
-    ) -> set[LeagueEntry]:
+    async def get_ranked_data(self, queue: RankedQueueType, tier: RankedTier, division: RankedDivision, page: int = 1) -> set[LeagueEntry]:
         params = {"page": page}
         data = await self.get(f"/lol/league/v4/entries/{queue.value}/{tier.value.upper()}/{division.value}", params=params)
         if data is not None:

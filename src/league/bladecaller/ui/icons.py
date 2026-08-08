@@ -34,6 +34,8 @@ class IconProvider:
         self._cache_dir: Path | None = None
         self._memory: dict[tuple[str, int], QPixmap] = {}
         self._names: dict[int, str] = {}
+        self._dragon_lock = asyncio.Lock()
+        self._names_lock = asyncio.Lock()
 
     async def close(self):
         if self._dragon is not None:
@@ -44,14 +46,21 @@ class IconProvider:
         cached = self._names.get(champion_id)
         if cached is not None:
             return cached
-        try:
-            dragon = await self._get_dragon()
-            name = await dragon.get_champion_name(champion_id)
-        except Exception:
-            return None
-        if name:
-            self._names[champion_id] = name
-        return name
+
+        # a page of rows asks for ~20 names at once; without the lock every one of
+        # them misses the DataDragon lookup cache and refetches champion.json
+        async with self._names_lock:
+            cached = self._names.get(champion_id)
+            if cached is not None:
+                return cached
+            try:
+                dragon = await self._get_dragon()
+                name = await dragon.get_champion_name(champion_id)
+            except Exception:
+                return None
+            if name:
+                self._names[champion_id] = name
+            return name
 
     async def champion_pixmap(self, champion: int | str, size: int) -> QPixmap | None:
         name = champion if isinstance(champion, str) else await self.champion_name(champion)
@@ -103,14 +112,19 @@ class IconProvider:
         return pixmap
 
     async def _get_dragon(self) -> DataDragon:
-        if self._dragon is None:
-            dragon = DataDragon()
-            await dragon.initialize()
-            self._dragon = dragon
-            root = Path(config.get_str("cache_dir", "meta", "./data")) / "dragon" / (dragon.latest_version or "latest")
-            self._cache_dir = root / "img"
-            self._cache_dir.mkdir(parents=True, exist_ok=True)
-        return self._dragon
+        # the lock is load-bearing: every caller awaits before `self._dragon` is
+        # assigned, so an unguarded check builds one DataDragon *per row* — and
+        # httpx.AsyncClient's constructor blocks ~0.4s building an SSL context
+        # from the Windows cert store, freezing the GUI for the whole page
+        async with self._dragon_lock:
+            if self._dragon is None:
+                dragon = await asyncio.to_thread(DataDragon)
+                await dragon.initialize()
+                self._dragon = dragon
+                root = Path(config.get_str("cache_dir", "meta", "./data")) / "dragon" / (dragon.latest_version or "latest")
+                self._cache_dir = root / "img"
+                self._cache_dir.mkdir(parents=True, exist_ok=True)
+            return self._dragon
 
     def _read_cached(self, filename: str) -> bytes | None:
         if self._cache_dir is None:

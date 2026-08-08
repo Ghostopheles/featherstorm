@@ -196,13 +196,25 @@ Two data sources, on purpose:
 | Source | Gives | Cost |
 |--------|-------|------|
 | `LCUClient.get_match_history()` | the **current summoner only** — one participant per game | none; no API key, no rate limit |
-| `RiotAPIClient.get_player_match()` | all ten participants + `challenges.killParticipation` | needs `RIOT_API_KEY`, rate-limited |
+| `RiotAPIClient.get_match()` | all ten participants + `challenges.killParticipation` | needs `RIOT_API_KEY`, rate-limited |
 
-The LCU list endpoint genuinely returns a single participant per game (see `ref/lcu_match_history.json`), which is why the full scoreboard has to come from MATCH-V5. No puuid lookup is needed: the match id is `f"{platformId}_{gameId}"` and the puuid comes from `participantIdentities[0].player.puuid`.
+The LCU list endpoint genuinely returns a single participant per game (see `ref/lcu_match_history.json`), which is why the full scoreboard has to come from MATCH-V5. The match id is `f"{platformId}_{gameId}"`.
 
-With no key (or on a failed request) the controller emits `MatchDetail.from_summary(...)` instead — the four stat tiles and build order still render from the LCU stats, Kill Participation shows `—`, and a muted note replaces the scoreboard. The panel never blanks.
+**The two sources do not share puuids.** The LCU reports an anonymized per-match UUID (`03c57e4e-11c8-550e-…`, 36 chars) where Riot reports the account's real 78-character puuid, so they never compare equal — which is why `RiotAPIClient.get_player_match()` is *not* used here. `MatchDetail.from_match(summary, match)` lines the two up on `participantId` instead (`participantIdentities[0].participantId`, carried on `MatchSummary.participant_id`), then narrows the match with the real puuid it found. `MatchSummary.puuid` is kept for reference but must not be passed to the Riot API.
+
+The failure paths all fall back to `MatchDetail.from_summary(...)` — the four stat tiles and build order still render from the LCU stats, Kill Participation shows `—`, and a muted note replaces the scoreboard. The panel never blanks. Three notes, deliberately distinct:
+
+| Case | Note | Client dropped? |
+|------|------|-----------------|
+| no `RIOT_API_KEY` | `NO_KEY_MESSAGE` | — |
+| HTTP 403 / 404 | `UNAVAILABLE_MESSAGE` | no — not retryable, not a fault |
+| anything else | `RIOT_FAILED_MESSAGE` | yes, rebuilt next expansion |
+
+**MATCH-V5 does not serve every queue.** Brawl (queue `2400`, game mode `KIWI`) answers **403**, and custom / Practice Tool games (`3140`) answer **404**. Those are permanent, so they must not be reported as a failure or drop the cached client — the `UNAVAILABLE_STATUSES` branch exists for exactly that.
 
 It builds its own `RiotAPIClient` from `load_dotenv()` + `os.getenv`. **Don't reach for `league.cli._shared._riot_client()`** — it raises `typer.Exit` and pulls typer into the UI.
+
+`LCUClient` and `RiotAPIClient` are both constructed via `asyncio.to_thread` — see the httpx quirk below.
 
 Adding another controller: same shape (`QObject` + signal, asyncio task, no Qt widgets), constructed and connected in `ui/app.py`.
 
@@ -211,14 +223,14 @@ Adding another controller: same shape (`QObject` + signal, asyncio task, no Qt w
 [`core/match.py`](core/match.py) holds the view models, and no widget touches `LCUMatch` / `PlayerMatch` directly:
 
 - **`MatchSummary.from_lcu(LCUMatch)`** — one collapsed row. Derived text lives on properties (`kda_text`, `kda_ratio_text`, `cs_per_min`, `duration_text`, `relative_time`, `queue_name`, `meta_text`), so formatting is testable without Qt.
-- **`MatchDetail`** — `from_player_match()` (full scoreboard) or `from_summary()` (degraded).
+- **`MatchDetail`** — `from_match(summary, match)` (full scoreboard, resolves the player by `participantId`), `from_player_match()` (when a `PlayerMatch` is already in hand) or `from_summary()` (degraded).
 - **`ScoreRow`** — one scoreboard line; holds `champion_id` *or* `champion_name`, since the LCU reports ids and Riot reports names.
 
 [`ui/widgets/match_row.py`](ui/widgets/match_row.py) has `MatchEntry` = `MatchRow` + `MatchDetailPanel` stacked. `MatchRow(compact=…)` drops the trailing stat columns for the dashboard; `expandable=False` makes a click emit `activated` instead of toggling, which is how the dashboard jumps to the page.
 
 [`ui/pages/match_history.py`](ui/pages/match_history.py) filters client-side over the loaded summaries (All/Wins/Losses chips + a queue combo) and recomputes the summary card from the *filtered* set. Only one row is expanded at a time.
 
-Art comes from [`ui/icons.py`](ui/icons.py). The loading, disk cache and scaling are real, but the three URL builders at the bottom (`_champion_square_url`, `_item_icon_url`, `_spell_icon_url`) are **stubs returning `None`** — `DataDragon` has no item/spell icon fetchers yet. Every caller falls back to its placeholder (champion tiles show the first two letters, item squares stay empty), so filling those in later is a one-liner each and needs no widget change.
+Art comes from [`ui/icons.py`](ui/icons.py). `IconProvider` holds two `asyncio.Lock`s and they are both load-bearing — see the quirk below. The loading, disk cache and scaling are real, but the three URL builders at the bottom (`_champion_square_url`, `_item_icon_url`, `_spell_icon_url`) are **stubs returning `None`** — `DataDragon` has no item/spell icon fetchers yet. Every caller falls back to its placeholder (champion tiles show the first two letters, item squares stay empty), so filling those in later is a one-liner each and needs no widget change.
 
 `LeagueEventBridge` ([`league/bridge.py`](../bridge.py)) is the eventual home for live match events, but it builds its `LCUClient` once in `__init__` and permanently disables out-of-game events if the client wasn't running then — unusable for a desktop app that starts before League. Fix that before wiring the bridge into the UI.
 
@@ -243,6 +255,8 @@ Widget dispatch order in [`ui/settings/editors.py`](ui/settings/editors.py) is l
 - Sidebar divider lines use the `DIVIDER` token, not `BORDER` — `BORDER` (18% alpha) is invisible against the sidebar gradient.
 - `Card` defaults to `QSizePolicy.Maximum` vertically. Without that a `Preferred` card swallows the space a trailing `addStretch()` was meant to take.
 - **League `gameId`s exceed 32 bits.** A `Signal(int)` is a C++ `int` and raises `OverflowError` on emit. Pass game ids as `Signal(object)` — every match-history signal does.
+- **`httpx.AsyncClient()`'s constructor blocks ~0.4s on Windows** building an SSL context from the system cert store, and under qasync that is 0.4s of frozen GUI. Anything that builds one from a coroutine (`LCUClient`, `RiotAPIClient`, `DataDragon`) goes through `asyncio.to_thread` — the ctors touch no event loop, so a worker thread is safe.
+- **A lazy `if self._x is None: … await …` cache is not a cache under fan-out.** Every caller passes the `is None` check before the first one finishes awaiting, so all of them do the work. A page of 20 rows built 42 `DataDragon`s this way, each paying the SSL cost above — ~18s of stalls. `IconProvider._get_dragon()` and `champion_name()` each hold an `asyncio.Lock` (cheap check first, re-check inside) precisely to stop that. Any new shared async resource needs the same treatment.
 - **`QScrollArea` sizes its widget to `minimumSizeHint()`, not `sizeHint()`**, and nested layouts report a smaller minimum than they need — rows get squeezed or overlap. Fix is `layout.setSizeConstraint(QLayout.SetMinimumSize)` on the scrolled column *and* on each row/panel inside it; `ScrollColumn`, `MatchRow`, `MatchDetailPanel` and `MatchEntry` all set it. Their vertical policy is `Minimum` (never shrink below the hint), not `Maximum`.
 - **`deleteLater()` alone doesn't remove a widget from view.** Taking it out of a layout leaves it parented and painting at its last geometry until the event loop destroys it, so a rebuilt panel renders its old contents underneath. Call `widget.setParent(None)` first — `ScrollColumn.clear()` and `_clear_layout()` both do.
 - Widgets are often constructed before `loop.run_forever()` starts, so `run_async()` ([`ui/icons.py`](ui/icons.py)) falls back to the loop `ui/app.py` *set* when none is *running*. A task created on a not-yet-running loop simply waits for it; `asyncio.get_running_loop()` alone would silently drop every fetch.
