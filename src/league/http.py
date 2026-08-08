@@ -25,19 +25,25 @@ class BaseAPIClient:
                 return None
         except httpx.HTTPStatusError as e:
             if not _suppress_exception:
-                log_error(f"[error]HTTP Status Error ({e.response.status_code}) from {format_url(e.request.url)}[/]: {str(e)}", show_locals=False, show_traceback=False)
+                log_error(
+                    f"[error]HTTP Status Error ({e.response.status_code}) from {format_url(e.request.url)}[/]: {str(e)}",
+                    show_locals=False,
+                    show_traceback=False,
+                )
             return e if _return_exception else None
         except httpx.RequestError as e:
             if not _suppress_exception:
-                log_error(f"[error]HTTP Request Error ({type(e).__name__}) from {format_url(e.request.url)}[/]: {str(e)}", show_locals=False, show_traceback=False)
+                log_error(
+                    f"[error]HTTP Request Error ({type(e).__name__}) from {format_url(e.request.url)}[/]: {str(e)}", show_locals=False, show_traceback=False
+                )
             return e if _return_exception else None
-
 
     async def get(self, *args, **kwargs):
         return await self._make_request("GET", *args, **kwargs)
 
     async def post(self, *args, **kwargs):
         return await self._make_request("POST", *args, **kwargs)
+
 
 class RiotRateLimiter:
     def __init__(self):
@@ -51,8 +57,8 @@ class RiotRateLimiter:
         if not limit_h or not count_h:
             return
 
-        limits = self._parse(limit_h)   # {window: limit}
-        counts = self._parse(count_h)   # {window: count}
+        limits = self._parse(limit_h)  # {window: limit}
+        counts = self._parse(count_h)  # {window: count}
         now = time.monotonic()
 
         for window, limit in limits.items():

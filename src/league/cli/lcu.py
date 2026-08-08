@@ -25,6 +25,7 @@ def lcu_summoner(client_install_path: Optional[Path] = default_client_path):
     summoner = asyncio.run(client.get_current_summoner())
     print(summoner)
 
+
 @app.command(name="matches", help="Fetch LCU match history")
 def lcu_matches(
     client_install_path: Optional[Path] = default_client_path,
@@ -178,6 +179,7 @@ def get_lobby(client_install_path: Optional[Path] = default_client_path):
 inventory_app = typer.Typer(name="inventory", no_args_is_help=True)
 app.add_typer(inventory_app)
 
+
 @inventory_app.command(name="item", help="Fetch an item from your summoner inventory")
 def lcu_inventory_item(client_install_path: Optional[Path] = default_client_path, content_id: str | None = None):
     client = LCUClient(client_install_path=client_install_path)
@@ -190,6 +192,7 @@ def lcu_inventory_item(client_install_path: Optional[Path] = default_client_path
 
     print(data)
 
+
 @inventory_app.command(name="asset", help="Fetch an inventory item asset")
 def lcu_inventory_item_asset(endpoint: str, client_install_path: Optional[Path] = default_client_path):
     if endpoint is None:
@@ -199,6 +202,7 @@ def lcu_inventory_item_asset(endpoint: str, client_install_path: Optional[Path] 
     data = asyncio.run(client.get_asset(endpoint))
     out = Path.cwd() / "test.jpg"
     out.write_bytes(data.content)
+
 
 @inventory_app.command(name="tiles", help="Fetch skin tiles for a champion")
 def lcu_fetch_tiles(champion_name: str, output_dir: Path | None = None, client_install_path: Optional[Path] = default_client_path):
@@ -229,9 +233,7 @@ def lcu_fetch_tiles(champion_name: str, output_dir: Path | None = None, client_i
         for item in inventory.values():
             id = item.get("id")
             if (id is not None) and (id in skin_ids):
-                endpoints.append(
-                    (id, item.get("tilePath"))
-                )
+                endpoints.append((id, item.get("tilePath")))
 
         for id, endpoint in endpoints:
             better_id = id % 1000
@@ -243,8 +245,10 @@ def lcu_fetch_tiles(champion_name: str, output_dir: Path | None = None, client_i
 
     asyncio.run(run())
 
+
 gameflow_app = typer.Typer(name="gameflow", no_args_is_help=True)
 app.add_typer(gameflow_app)
+
 
 @gameflow_app.command(name="session", help="Print the current gameflow session")
 def lcu_gameflow_session(client_install_path: Optional[Path] = default_client_path):
@@ -253,5 +257,6 @@ def lcu_gameflow_session(client_install_path: Optional[Path] = default_client_pa
     data = asyncio.run(client.get_gameflow_session())
     out = Path("./data/gameflow_session.json")
     import json
+
     out.write_text(json.dumps(data, indent=4))
     print(data)

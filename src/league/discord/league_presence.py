@@ -16,11 +16,13 @@ from league.discord import DiscordRichPresence, DiscordActivity, ActivityType
 MAX_PARTY_SIZE = 5
 UPDATE_INTERVAL = 15.0
 
+
 class SessionStatus(Enum):
     Empty = 1
     InLobby = 2
     InQueue = 3
     InGame = 4
+
 
 class LeagueRichPresence:
     presence: DiscordRichPresence
@@ -79,11 +81,7 @@ class LeagueRichPresence:
 
     async def init_empty(self):
         activity = DiscordActivity(
-            activity_type=ActivityType.PLAYING,
-            name="League of Legends",
-            state="Hanging out",
-            details="In Client",
-            start=int(time.time())
+            activity_type=ActivityType.PLAYING, name="League of Legends", state="Hanging out", details="In Client", start=int(time.time())
         )
         self.presence.set_activity(activity)
         self.session_status = SessionStatus.Empty
@@ -111,12 +109,7 @@ class LeagueRichPresence:
         self.session_status = SessionStatus.InLobby
 
     async def init_match(
-        self,
-        game_data: AllGameData,
-        player_teams: dict[str, GameTeam],
-        player_champions: dict[str, str],
-        active_player_name: str,
-        get_game_data
+        self, game_data: AllGameData, player_teams: dict[str, GameTeam], player_champions: dict[str, str], active_player_name: str, get_game_data
     ):
         self._get_game_data = get_game_data
         await self.dragon.initialize()
@@ -131,8 +124,8 @@ class LeagueRichPresence:
         if self.riot:
             self.active_player_puuid = await self.riot.get_puuid(active_player.riotIdGameName, active_player.riotIdTagLine)
 
-        #urlsafe_riot_name = f"{active_player.riotIdGameName.replace(" ", "%20")}-{active_player.riotIdTagLine}"
-        #opgg_url = f"https://op.gg/lol/summoners/na/{urlsafe_riot_name}/ingame"
+        # urlsafe_riot_name = f"{active_player.riotIdGameName.replace(" ", "%20")}-{active_player.riotIdTagLine}"
+        # opgg_url = f"https://op.gg/lol/summoners/na/{urlsafe_riot_name}/ingame"
 
         champion = player_champions.get(game_data.activePlayer.riotIdGameName)
         skin_id = active_player.skinID
@@ -163,19 +156,18 @@ class LeagueRichPresence:
             large_image=large_image,
             large_text=large_text,
             small_image=small_image,
-            small_text=small_text
-            #buttons=[
+            small_text=small_text,
+            # buttons=[
             #    {
             #        "label": "op.gg",
             #        "url": opgg_url
             #    }
-            #]
+            # ]
         )
         self.presence.set_activity(activity)
         self.session_status = SessionStatus.InGame
 
-    async def update_lobby(self, lobby_data):
-        ...
+    async def update_lobby(self, lobby_data): ...
 
     async def update_active_match(self):
         if self._get_game_data is None:
@@ -255,13 +247,10 @@ class LeagueRichPresence:
 
         enemy_team = [p for p in game_data.allPlayers if self.teams.get(p.riotIdGameName) != active_team]
 
-        lane_opponent = next(
-            (p for p in enemy_team if p.position == active_player_position),
-            None
-        )
+        lane_opponent = next((p for p in enemy_team if p.position == active_player_position), None)
         return lane_opponent.championName if lane_opponent else None
 
-    async def get_image_key_for_skin(self, champion_name:str, skin_id: int) -> str:
+    async def get_image_key_for_skin(self, champion_name: str, skin_id: int) -> str:
         skins = await self.dragon.get_champion_skins(champion_name)
         for skin in skins:
             bad_id = int(skin.get("id"))

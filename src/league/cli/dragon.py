@@ -113,9 +113,7 @@ async def _build_item_panel(item: DragonItem, item_id: int, dragon: DataDragon) 
         sections.append(chips)
 
     gold = item.gold
-    subtitle = Text.from_markup(
-        f"[gold]{gold.total}g[/] total   [eminence_dim]{gold.base}g combine[/]   [eminence_dim]{gold.sell}g sell[/]"
-    )
+    subtitle = Text.from_markup(f"[gold]{gold.total}g[/] total   [eminence_dim]{gold.base}g combine[/]   [eminence_dim]{gold.sell}g sell[/]")
 
     return Panel(
         Group(*sections),
@@ -153,6 +151,7 @@ def dragon_champion(champion_id: int):
         print(champion)
 
     asyncio.run(run())
+
 
 @app.command(name="art", help="Get champion splash art by name")
 def dragon_splash(champion_name: str, skin: int = 0, asset_type: ArtAssetType = ArtAssetType.splash, output_path: Path | None = None):

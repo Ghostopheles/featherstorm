@@ -22,28 +22,19 @@ def event_type_is(type_name: str, obj: TimelineEvent, **kwargs) -> bool:
 
 
 @rule
-def event_caused_by_participant(
-    targetParticipantID: int, obj: TimelineEvent, **kwargs
-) -> bool:
+def event_caused_by_participant(targetParticipantID: int, obj: TimelineEvent, **kwargs) -> bool:
     """Match events caused by a specific participant. Args: [1]"""
     return obj.killerId == targetParticipantID
 
 
 @rule
-def event_assisted_by_participant(
-    targetParticipantID: int, obj: TimelineEvent, **kwargs
-) -> bool:
+def event_assisted_by_participant(targetParticipantID: int, obj: TimelineEvent, **kwargs) -> bool:
     """Match events assisted by a specific participant. Args: [1]"""
-    return (
-        obj.assistingParticipantIds is not None
-        and targetParticipantID in obj.assistingParticipantIds
-    )
+    return obj.assistingParticipantIds is not None and targetParticipantID in obj.assistingParticipantIds
 
 
 @rule
-def event_victim_is_participant(
-    targetParticipantID: int, obj: TimelineEvent, **kwargs
-) -> bool:
+def event_victim_is_participant(targetParticipantID: int, obj: TimelineEvent, **kwargs) -> bool:
     """Match events where the victim is a specific participant. Args: [1]"""
     return obj.victimId == targetParticipantID
 
@@ -116,11 +107,7 @@ class MatchTimelineAnalyzer:
     def __init_rules(self):
         self.HIGHLIGHT_RULES = {
             event_type_is("CHAMPION_SPECIAL_KILL")
-            & (
-                event_caused_by_participant(self.targetParticipantID)
-                & event_is_kill_type("KILL_MULTI")
-                & event_has_multikill_length(2)
-            )
+            & (event_caused_by_participant(self.targetParticipantID) & event_is_kill_type("KILL_MULTI") & event_has_multikill_length(2))
         }
 
     def __is_event_relevant(self, event: TimelineEvent) -> bool:
@@ -152,10 +139,7 @@ class MatchTimelineAnalyzer:
 
         batches: list[list[TimelineEvent]] = []
         for event in relevant_events:
-            if (
-                batches
-                and event.timestamp - batches[-1][-1].timestamp <= BATCH_WINDOW_MS
-            ):
+            if batches and event.timestamp - batches[-1][-1].timestamp <= BATCH_WINDOW_MS:
                 batches[-1].append(event)
             else:
                 batches.append([event])
@@ -168,22 +152,17 @@ class MatchTimelineAnalyzer:
             victim_ids = [
                 e.victimId
                 for e in all_events
-                if e.type == "CHAMPION_KILL"
-                and e.killerId == self.targetParticipantID
-                and batch_start <= e.timestamp <= batch_end
-                and e.victimId is not None
+                if e.type == "CHAMPION_KILL" and e.killerId == self.targetParticipantID and batch_start <= e.timestamp <= batch_end and e.victimId is not None
             ]
-            victim_names = [
-                self.participant_champions[vid]
-                for vid in victim_ids
-                if vid in self.participant_champions
-            ]
-            highlights.append(HighlightEvent(
-                timestamp=batch[0].timestamp,
-                events=batch,
-                position=batch[0].position,
-                victim_champion_names=victim_names,
-            ))
+            victim_names = [self.participant_champions[vid] for vid in victim_ids if vid in self.participant_champions]
+            highlights.append(
+                HighlightEvent(
+                    timestamp=batch[0].timestamp,
+                    events=batch,
+                    position=batch[0].position,
+                    victim_champion_names=victim_names,
+                )
+            )
         return highlights
 
 
@@ -211,10 +190,10 @@ class HighlightEvent:
 
 _EVENT_PRIORITY: dict[str, int] = {"multi": 4, "kill": 3, "death": 2, "assist": 1}
 _EVENT_STYLES: dict[str, tuple[str, str]] = {
-    "kill":   ("bold green",   "K"),
-    "death":  ("bold red",     "D"),
-    "assist": ("bold yellow",  "A"),
-    "multi":  ("bold magenta", "M"),
+    "kill": ("bold green", "K"),
+    "death": ("bold red", "D"),
+    "assist": ("bold yellow", "A"),
+    "multi": ("bold magenta", "M"),
 }
 
 

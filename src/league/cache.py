@@ -2,6 +2,7 @@ import json
 
 from pathlib import Path
 
+
 class DataCache:
     def __init__(self, path: Path, default_name: str | None = None):
         self._path = path

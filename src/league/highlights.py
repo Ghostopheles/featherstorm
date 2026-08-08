@@ -4,8 +4,11 @@ import signal
 import asyncio
 
 from rich.progress import (
-    Progress, BarColumn, TextColumn,
-    MofNCompleteColumn, TimeElapsedColumn,
+    Progress,
+    BarColumn,
+    TextColumn,
+    MofNCompleteColumn,
+    TimeElapsedColumn,
 )
 
 from pathlib import Path
@@ -30,16 +33,18 @@ DEFAULT_CAMERA_FOV = 60
 
 REALITY_CHECK_BUFFER = 5
 
-LEAD_BUFFER = 7 # seconds
-TRAIL_BUFFER = 7 # seconds
+LEAD_BUFFER = 7  # seconds
+TRAIL_BUFFER = 7  # seconds
 
 CAMERA_SELECTION_OFFSET = {"x": 0, "y": 2200, "z": -1400}
 
 REPLAY_API_URL = "https://127.0.0.1:2999/replay"
 
+
 def print(*args, **kwargs):
     prefix = rf"[highlights]\[highlights][/]:"
     console.print(prefix, *args, **kwargs)
+
 
 class HighlightManager:
     game_path: Path
@@ -128,11 +133,11 @@ class HighlightManager:
         return self.__match_cache.get(matchID)
 
     async def get_recent_matches(
-            self,
-            count: int = 10,
-            match_type: Optional[MatchType] = MatchType.Normal,
-            queue_type: Optional[Queue] = None,
-        ) -> list[PlayerMatch]:
+        self,
+        count: int = 10,
+        match_type: Optional[MatchType] = MatchType.Normal,
+        queue_type: Optional[Queue] = None,
+    ) -> list[PlayerMatch]:
         if self.__matches is None:
             self.__matches = await self.riot.get_recent_matches(self.puuid, count=count, match_type=match_type, queue_type=queue_type)
             self.__match_cache = {match.matchId: match for match in self.__matches}
@@ -205,7 +210,7 @@ class HighlightManager:
             await self.wait_for_replay_ready()
         try:
             await self.record(events, numHighlights)
-        except (KeyboardInterrupt, asyncio.CancelledError):
+        except KeyboardInterrupt, asyncio.CancelledError:
             print("[warning]Cancelled[/] - pausing replay and ending recording...")
             try:
                 await self.pause()
@@ -403,7 +408,7 @@ class HighlightManager:
                 matchID = self.__current_match.matchId
                 file_name = f"highlight_{idx}.webm"
 
-                file_dir = (self.cache_path / matchID)
+                file_dir = self.cache_path / matchID
                 file_dir.mkdir(parents=True, exist_ok=True)
 
                 status.update("Configuring recording...")
@@ -432,7 +437,7 @@ class HighlightManager:
             TimeElapsedColumn(),
             TextColumn("[featherstorm]Compressing highlights...[/]"),
             console=console,
-            expand=True
+            expand=True,
         ) as progress:
             overall = progress.add_task("", total=len(paths))
 
@@ -446,7 +451,6 @@ class HighlightManager:
 
         print(":cherry_blossom: Done compressing highlights")
 
-
     async def compress_highlight(self, file_path: Path) -> Path:
         dest = file_path.with_suffix(".mp4")
 
@@ -454,16 +458,27 @@ class HighlightManager:
             dest.unlink()
 
         cmd = [
-            "ffmpeg", "-i", file_path.as_posix(),
-            "-c:v", "av1_nvenc",
-            "-cq", self.cfg.get("export_constant_quality"),
-            "-preset", f"p{self.cfg.get("export_preset")}",
-            "-r", self.cfg.get("export_fps"),
-            "-multipass", self.cfg.get("export_multipass"),
-            "-spatial-aq", "1",
-            "-temporal-aq", "1",
-            "-b:a", self.cfg.get("export_audio_quality"),
-            "-rc-lookahead", "32",
+            "ffmpeg",
+            "-i",
+            file_path.as_posix(),
+            "-c:v",
+            "av1_nvenc",
+            "-cq",
+            self.cfg.get("export_constant_quality"),
+            "-preset",
+            f"p{self.cfg.get('export_preset')}",
+            "-r",
+            self.cfg.get("export_fps"),
+            "-multipass",
+            self.cfg.get("export_multipass"),
+            "-spatial-aq",
+            "1",
+            "-temporal-aq",
+            "1",
+            "-b:a",
+            self.cfg.get("export_audio_quality"),
+            "-rc-lookahead",
+            "32",
             dest.as_posix(),
         ]
 

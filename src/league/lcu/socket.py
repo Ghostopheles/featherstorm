@@ -37,10 +37,12 @@ class LCUWebsocketEvent:
 
 type LCUWebsocketEventCallback = Callable[[LCUWebsocketEvent], Any]
 
+
 @dataclass(frozen=True, slots=True)
 class LCUWebsocketEventCallbackRegistration:
     event_type: LCUWebsocketEventType
     callback: LCUWebsocketEventCallback
+
 
 class LCUWebsocketClient:
     _port: int
@@ -60,10 +62,7 @@ class LCUWebsocketClient:
         if not event.startswith("OnJsonApiEvent"):
             event = f"OnJsonApiEvent{event}"
 
-        registration = LCUWebsocketEventCallbackRegistration(
-            event_type=type,
-            callback=callback
-        )
+        registration = LCUWebsocketEventCallbackRegistration(event_type=type, callback=callback)
 
         self._callbacks.setdefault(event, [])
         self._callbacks[event].append(registration)

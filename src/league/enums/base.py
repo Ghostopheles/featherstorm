@@ -1,10 +1,12 @@
 from enum import Enum, StrEnum
 
+
 class LeagueClientStatus(Enum):
     DISCONNECTED = 1
     LOADING = 2
     CONNECTED = 3
     BANISHED = 4
+
 
 class GameEventType(StrEnum):
     GameStart = "GameStart"
@@ -35,12 +37,14 @@ class GameResult(Enum):
     Win = 0
     Lose = 1
 
+
 class GamePlayerPosition(StrEnum):
     TOP = "Top"
     JUNGLE = "Jungle"
     MIDDLE = "Middle"
     BOTTOM = "Bottom"
     SUPPORT = "Support"
+
 
 class ReplaySequenceEasing(StrEnum):
     LINEAR = "linear"
@@ -78,21 +82,25 @@ class ReplaySequenceEasing(StrEnum):
     BOUNCE_EASE_OUT = "bounceEaseOut"
     BOUNCE_EASE_IN_OUT = "bounceEaseInOut"
 
+
 class RankedQueueType(Enum):
     RANKED_SOLO_5x5 = "RANKED_SOLO_5x5"
     RANKED_TFT = "RANKED_TFT"
     RANKED_FLEX_SR = "RANKED_FLEX_SR"
+
 
 class RankedQueueTypeChoice(StrEnum):
     Solo = "Solo"
     TFT = "TFT"
     Flex = "Flex"
 
+
 RANKED_QUEUE_TYPE_MAP = {
     RankedQueueTypeChoice.Solo: RankedQueueType.RANKED_SOLO_5x5,
     RankedQueueTypeChoice.TFT: RankedQueueType.RANKED_TFT,
     RankedQueueTypeChoice.Flex: RankedQueueType.RANKED_FLEX_SR,
 }
+
 
 class RankedTier(StrEnum):
     Challenger = "Challenger"
@@ -105,6 +113,7 @@ class RankedTier(StrEnum):
     Silver = "Silver"
     Bronze = "Bronze"
     Iron = "Iron"
+
 
 class RankedDivision(Enum):
     I = "I"

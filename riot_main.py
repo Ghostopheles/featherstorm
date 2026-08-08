@@ -22,12 +22,12 @@ MATCH_ID = "NA1_5549854658"
 NAME = "Dallas N Tollway"
 TAGLINE = "uwu"
 
+
 async def amain():
     api_key = os.getenv("RIOT_API_KEY")
     highlights = await HighlightManager.create(NAME, TAGLINE, GAME_INSTALL_PATH, HIGHLIGHTS_PATH, api_key)
     matchID = "NA1_5558760312"
     print(await highlights.get_highlight_events(matchID))
-
 
 
 if __name__ == "__main__":

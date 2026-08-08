@@ -18,7 +18,7 @@ from league.enums import (
     QueueChoice,
     resolve_queue,
     resolve_queue_name,
-    resolve_match_type
+    resolve_match_type,
 )
 from league.models import LeagueEntry
 
@@ -177,6 +177,7 @@ def riot_timeline(
 
     asyncio.run(run())
 
+
 @app.command(name="ranked")
 def riot_ranked_data(
     queue: Annotated[RankedQueueTypeChoice, typer.Argument(case_sensitive=False, help="Ranked queue type")],
@@ -193,20 +194,11 @@ def riot_ranked_data(
         with console.status("Loading players...", spinner="simpleDotsScrolling", spinner_style="featherstorm"):
             accounts = await client.get_many_accounts(puuids)
 
-        accounts = {
-            a.puuid: a for a in accounts
-        }
+        accounts = {a.puuid: a for a in accounts}
 
         title = f"[green]{queue.value}[/] Ranked Ladder - {tier} {division}"
 
-        table = Table(
-            title=title,
-            show_header=True,
-            border_style="rakan",
-            header_style="featherstorm",
-            box=box.ROUNDED,
-            show_lines=True
-        )
+        table = Table(title=title, show_header=True, border_style="rakan", header_style="featherstorm", box=box.ROUNDED, show_lines=True)
         table.add_column("#", width=3)
         table.add_column("Name", width=30)
         table.add_column("Record", width=11, justify="center")
@@ -241,6 +233,7 @@ def riot_ranked_data(
         print(table)
 
     asyncio.run(run())
+
 
 @app.command(name="live-game", help="Fetch the currently ongoing match for a player")
 def riot_live_match(

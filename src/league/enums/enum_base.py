@@ -1,5 +1,6 @@
 from enum import IntEnum, StrEnum
 
+
 class LookupEnum(IntEnum):
     """IntEnum with case-insensitive name lookup helpers."""
 
@@ -19,6 +20,7 @@ class LookupEnum(IntEnum):
             return cls.from_name(name)
         except KeyError:
             return None
+
 
 class LookupStrEnum(StrEnum):
     """StrEnum with case-insensitive name lookup helpers."""

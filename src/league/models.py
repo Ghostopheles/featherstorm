@@ -12,12 +12,14 @@ def cast_to_enum(value, enum: Enum):
 
     return enum[value]
 
+
 @dataclass
 class LeagueEntryMiniSeries:
     losses: int
     progress: str
     target: int
     wins: int
+
 
 @dataclass
 class LeagueEntry:
@@ -45,11 +47,13 @@ class LeagueEntry:
         if self.miniSeries is not None:
             self.miniSeries = LeagueEntryMiniSeries(**self.miniSeries)
 
+
 @dataclass
 class RiotAccount:
     puuid: str
     gameName: Optional[str] = None
     tagLine: Optional[str] = None
+
 
 @dataclass
 class StatRune:
@@ -714,26 +718,31 @@ class PlayerMatch(BaseModel):
             enemies=enemies,
         )
 
+
 @dataclass
 class BannedChampion:
     pickTurn: int
     championId: int
     teamId: int
 
+
 @dataclass
 class Observer:
     encryptionKey: str
+
 
 @dataclass
 class GameCustomizationObject:
     category: str
     content: str
 
+
 @dataclass
 class Perks:
     perkIds: list[int]
     perkStyle: int
     perkSubStyle: int
+
 
 @dataclass
 class CurrentGameParticipant:
@@ -750,6 +759,7 @@ class CurrentGameParticipant:
     def __post_init__(self):
         self.perks = Perks(**self.perks)
         self.gameCustomizationObjects = [GameCustomizationObject(**obj) for obj in self.gameCustomizationObjects]
+
 
 @dataclass
 class CurrentGameInfo:

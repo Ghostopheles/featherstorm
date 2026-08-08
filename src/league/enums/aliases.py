@@ -4,6 +4,7 @@ from league.enums import Map, Queue, MatchType
 
 from league.enums.queues import QUEUE_DESCRIPTION
 
+
 class QueueChoice(StrEnum):
     Custom = "Custom"
     DraftPick = "Draft Pick"
@@ -23,6 +24,7 @@ class QueueChoice(StrEnum):
     Brawl = "Brawl"
     Practice = "Practice"
 
+
 _QUEUE_CHOICE_TO_MAP: dict[QueueChoice, Map] = {
     QueueChoice.DraftPick: Map.SUMMONER_S_RIFT_3,
     QueueChoice.RankedSolo: Map.SUMMONER_S_RIFT_3,
@@ -39,7 +41,7 @@ _QUEUE_CHOICE_TO_MAP: dict[QueueChoice, Map] = {
     QueueChoice.ARAMMayhem: Map.HOWLING_ABYSS,
     QueueChoice.Arena: Map.RINGS_OF_WRATH,
     QueueChoice.Arena16Player: Map.RINGS_OF_WRATH,
-    QueueChoice.Practice: Map.SUMMONER_S_RIFT_3
+    QueueChoice.Practice: Map.SUMMONER_S_RIFT_3,
 }
 
 _QUEUE_CHOICE_TO_QUEUE: dict[QueueChoice, Queue] = {
@@ -59,11 +61,13 @@ _QUEUE_CHOICE_TO_QUEUE: dict[QueueChoice, Queue] = {
     QueueChoice.ARAMMayhem: Queue.ARAM_MAYHEM,
     QueueChoice.Arena: Queue.ARENA,
     QueueChoice.Arena16Player: Queue.ARENA_2,
-    QueueChoice.Practice: Queue.PRACTICE
+    QueueChoice.Practice: Queue.PRACTICE,
 }
+
 
 def resolve_queue(value: QueueChoice) -> Queue:
     return _QUEUE_CHOICE_TO_QUEUE[value]
+
 
 def resolve_queue_name(value: QueueChoice | Queue) -> str:
     if isinstance(value, QueueChoice):
@@ -72,14 +76,17 @@ def resolve_queue_name(value: QueueChoice | Queue) -> str:
         queue = value
     return QUEUE_DESCRIPTION[queue]
 
+
 def resolve_map_from_queue_choice(value: QueueChoice) -> Map:
     return _QUEUE_CHOICE_TO_MAP[value]
+
 
 class MatchTypeChoice(StrEnum):
     Normal = "Normal"
     Ranked = "Ranked"
     Tournament = "Tournament"
     Tutorial = "Tutorial"
+
 
 def resolve_match_type(value: MatchTypeChoice) -> MatchType:
     return MatchType.from_name(value)

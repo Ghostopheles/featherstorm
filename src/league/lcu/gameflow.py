@@ -8,10 +8,12 @@ from league.lcu.socket import LCUWebsocketEventCallback, LCUWebsocketEventType
 
 default_client_path = Path(cfg.get("lcu.client_install_path"))
 
+
 class LCUGameFlowEvent(StrEnum):
     LobbyCreated = "LobbyCreated"
     LobbyUpdated = "LobbyUpdated"
     LobbyDeleted = "LobbyDeleted"
+
 
 GAMEFLOW_EVENT_TO_WS_ENDPOINT = {
     LCUGameFlowEvent.LobbyCreated: "/lol-lobby/v2/lobby",
@@ -19,8 +21,10 @@ GAMEFLOW_EVENT_TO_WS_ENDPOINT = {
     LCUGameFlowEvent.LobbyDeleted: "/lol-lobby/v2/lobby",
 }
 
+
 def get_event_endpoint(event: LCUGameFlowEvent):
     return GAMEFLOW_EVENT_TO_WS_ENDPOINT.get(event)
+
 
 def get_event_type(event: LCUGameFlowEvent) -> LCUWebsocketEventType:
     if "Created" in event:
@@ -31,6 +35,7 @@ def get_event_type(event: LCUGameFlowEvent) -> LCUWebsocketEventType:
         return LCUWebsocketEventType.Delete
     else:
         raise TypeError("'event' must be a valid LCUGameFlowEvent")
+
 
 class LCUGameFlow:
     lcu: LCUClient
@@ -61,5 +66,3 @@ class LCUGameFlow:
         event_type = get_event_type(event)
         endpoint = get_event_endpoint(event)
         return self.add_raw_ws_event_callback(endpoint, callback, event_type)
-
-

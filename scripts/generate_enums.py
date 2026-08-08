@@ -1,5 +1,6 @@
 # generate_enums.py
 """Generate type-safe Enums + metadata sidecars from Riot static JSON."""
+
 import re
 import httpx
 import keyword
@@ -16,6 +17,7 @@ if not SOURCE_DIR.exists():
 OUTPUT_DIR = SOURCE_DIR / "enums"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
+
 @dataclass(frozen=True)
 class EnumSpec:
     url: str  # static data endpoint
@@ -27,9 +29,7 @@ class EnumSpec:
     #   ("mapName", "NAME")      -> const explicitly named MAP_NAME
     meta_fields: tuple[str | tuple[str, str], ...] = ()
     # fallback when name_field is null/empty
-    fallback: Callable[[dict], str] = field(
-        default=lambda row: f"item_{row.get('id', 'x')}"
-    )
+    fallback: Callable[[dict], str] = field(default=lambda row: f"item_{row.get('id', 'x')}")
 
 
 def slug(text: str) -> str:
@@ -60,7 +60,7 @@ def const_name(spec: EnumSpec, fld: str | tuple[str, str]) -> tuple[str, str]:
     suffix = slug(re.sub(r"(?<!^)(?=[A-Z])", "_", fld))  # camelCase -> CAMEL_CASE
     # strip a redundant class-name fragment at the start (MAP_NAME from mapName)
     if suffix.startswith(prefix + "_"):
-        suffix = suffix[len(prefix) + 1:]
+        suffix = suffix[len(prefix) + 1 :]
     elif suffix == prefix:
         suffix = "VALUE"
     return key, f"{prefix}_{suffix}"

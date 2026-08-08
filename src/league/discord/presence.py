@@ -5,6 +5,7 @@ from dataclasses import dataclass, asdict
 from pypresence import AioPresence
 from pypresence.types import ActivityType, StatusDisplayType
 
+
 @dataclass
 class DiscordActivity:
     activity_type: ActivityType | None = None
@@ -26,17 +27,14 @@ class DiscordActivity:
     buttons: list | None = None
     instance: bool | None = None
 
+
 class DiscordRichPresence:
     client_id: str = ""
     connected: bool = False
     rpc: AioPresence | None = None
     activity: DiscordActivity | None = None
 
-    def __init__(
-        self,
-        client_id: str | None = None,
-        activity: DiscordActivity | None = None
-    ):
+    def __init__(self, client_id: str | None = None, activity: DiscordActivity | None = None):
         if client_id is not None:
             self.client_id = client_id
 
@@ -113,7 +111,7 @@ class DiscordRichPresence:
         spectate: str | None = None,
         match: str | None = None,
         buttons: list | None = None,
-        instance: bool | None = None
+        instance: bool | None = None,
     ):
         if not self.connected:
             raise RuntimeError("DiscordRichPresence is not connected.")

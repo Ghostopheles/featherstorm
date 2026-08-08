@@ -188,6 +188,7 @@ def register_event_feed(watcher: MatchWatcher, format_player):
     watcher.on(GameEventType.Ace, on_ace)
     watcher.on(GameEventType.GameEnd, on_game_end)
 
+
 async def register_gameflow_events(gameflow: LCUGameFlow, presence: LeagueRichPresence | None):
     if presence is None:
         return
@@ -197,17 +198,21 @@ async def register_gameflow_events(gameflow: LCUGameFlow, presence: LeagueRichPr
             return
 
         await presence.init_lobby(event.data)
+
     gameflow.add_callback(LCUGameFlowEvent.LobbyCreated, on_lobby_create)
 
     async def on_lobby_update(event: LCUWebsocketEvent):
         await presence.update_lobby(event.data)
+
     gameflow.add_callback(LCUGameFlowEvent.LobbyUpdated, on_lobby_update)
 
     async def on_lobby_delete(event: LCUWebsocketEvent):
         await presence.init_empty()
+
     gameflow.add_callback(LCUGameFlowEvent.LobbyDeleted, on_lobby_delete)
 
     await gameflow.start()
+
 
 async def run_companion():
     client = LeagueClient()
@@ -292,13 +297,7 @@ async def run_companion():
                     dev.set_color_and_temperature(color)
 
             if presence is not None:
-                await presence.init_match(
-                    all_data,
-                    player_teams,
-                    player_champions,
-                    active_player_name,
-                    get_game_data
-                )
+                await presence.init_match(all_data, player_teams, player_champions, active_player_name, get_game_data)
 
         async def on_game_end(_: GameEvent):
             if presence is not None:
