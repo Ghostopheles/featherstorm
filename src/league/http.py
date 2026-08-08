@@ -44,6 +44,9 @@ class BaseAPIClient:
     async def post(self, *args, **kwargs):
         return await self._make_request("POST", *args, **kwargs)
 
+    async def close(self):
+        await self.client.aclose()
+
 
 class RiotRateLimiter:
     def __init__(self):

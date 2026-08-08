@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Optional
 from pydantic import BaseModel
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 
 from league.enums import GameEventType, GameResult, GameTeam, Queue, Map, RankedQueueType, RankedTier, RankedDivision
 
@@ -11,6 +11,14 @@ def cast_to_enum(value, enum: Enum):
         return value
 
     return enum[value]
+
+
+def try_cast_to_enum(value, enum: Enum):
+    """Cast `value` to `enum`, leaving it untouched when there's no matching member."""
+    try:
+        return cast_to_enum(value, enum)
+    except KeyError:
+        return value
 
 
 @dataclass
@@ -324,14 +332,21 @@ class GameEvent:
     Recipient: Optional[str] = None
     Result: Optional[GameResult] = None
 
-    def __post_init__(self, *args, **kwargs):
-        for key, value in kwargs.items():
-            key = key[0].lower() + key[1:]
-            setattr(self, key, value)
+    def __post_init__(self):
+        # unknown members are left as raw strings so a new Riot event type can't kill the poll loop
+        self.EventName = try_cast_to_enum(self.EventName, GameEventType)
+        self.AcingTeam = try_cast_to_enum(self.AcingTeam, GameTeam)
+        self.Result = try_cast_to_enum(self.Result, GameResult)
 
-        self.EventName = cast_to_enum(self.EventName, GameEventType)
-        self.AcingTeam = cast_to_enum(self.AcingTeam, GameTeam)
-        self.Result = cast_to_enum(self.Result, GameResult)
+    @classmethod
+    def from_dict(cls, raw: dict) -> "GameEvent":
+        """Build from a raw API payload, keeping fields we don't model as plain attributes."""
+        known = {f.name for f in fields(cls)}
+        event = cls(**{k: v for k, v in raw.items() if k in known})
+        for key, value in raw.items():
+            if key not in known:
+                setattr(event, key, value)
+        return event
 
     def get_formatted_timestamp(self) -> str:
         minutes, secs = divmod(self.EventTime, 60)
@@ -368,7 +383,7 @@ class AllGameData:
     def __post_init__(self):
         self.activePlayer = None if "error" in self.activePlayer else ActivePlayer(**self.activePlayer)
         self.allPlayers = [Player(**p) for p in self.allPlayers]
-        self.events = [GameEvent(**e) for e in self.events["Events"]]
+        self.events = [GameEvent.from_dict(e) for e in self.events["Events"]]
         self.gameData = GameData(**self.gameData)
 
 

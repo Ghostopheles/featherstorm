@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 
 from enum import StrEnum
@@ -49,6 +50,13 @@ class LeagueEvent(StrEnum):
     SessionEnd = "SessionEnd"
 
 
+def _bridge_event_for(event_type: GameEventType) -> Optional[LeagueEvent]:
+    try:
+        return LeagueEvent(event_type.value)
+    except ValueError:
+        return None
+
+
 class LeagueEventBridge:
     """Unified event hub bridging the Live Client API (in-game) and the LCU websocket (out-of-game).
 
@@ -64,13 +72,18 @@ class LeagueEventBridge:
         self.game = game_client or LeagueClient()
         self._watcher = MatchWatcher(self.game, exit_on_timeout=False)
         self._callbacks: dict[LeagueEvent, list[BridgeCallback]] = {}
+        self._tasks: set[asyncio.Task] = set()
 
         # internal dispatchers registered up-front so user callbacks can be added any time,
         # sidestepping the LCU websocket's register-before-connect constraint
         for event_type in GameEventType:
-            self.game.on(event_type, self._make_game_dispatcher(event_type))
+            bridge_event = _bridge_event_for(event_type)
+            if bridge_event is None:
+                log_warning(f"No LeagueEvent member for game event '{event_type}' - it will not be dispatched")
+                continue
+            self.game.on(event_type, self._make_game_dispatcher(bridge_event))
 
-        self._watcher.on_session_start(self._make_session_dispatcher(LeagueEvent.SessionStart))
+        self._watcher.on_session_start(self._on_session_start)
         self._watcher.on_session_end(self._make_session_dispatcher(LeagueEvent.SessionEnd))
 
         self.lcu = lcu_client
@@ -94,19 +107,30 @@ class LeagueEventBridge:
             return decorator
         self._callbacks.setdefault(event, []).append(callback)
 
+    def _spawn(self, coro):
+        task = asyncio.create_task(coro)
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def _run_callback(self, event: LeagueEvent, callback: BridgeCallback, *args):
+        try:
+            await callback(*args)
+        except Exception as e:
+            log_error(f"Error dispatching bridge callback for '{event}': {str(e)}")
+
     async def _fire(self, event: LeagueEvent, *args):
+        # async callbacks run as tasks so a slow handler can't stall the 250ms poll loop or the
+        # websocket reader - they are concurrent with each other, not serialized
         for callback in self._callbacks.get(event, []):
+            if inspect.iscoroutinefunction(callback):
+                self._spawn(self._run_callback(event, callback, *args))
+                continue
             try:
-                if inspect.iscoroutinefunction(callback):
-                    await callback(*args)
-                else:
-                    callback(*args)
+                callback(*args)
             except Exception as e:
                 log_error(f"Error dispatching bridge callback for '{event}': {str(e)}")
 
-    def _make_game_dispatcher(self, event_type: GameEventType):
-        bridge_event = LeagueEvent(event_type.value)
-
+    def _make_game_dispatcher(self, bridge_event: LeagueEvent):
         async def dispatch(event: GameEvent):
             await self._fire(bridge_event, event)
 
@@ -118,8 +142,17 @@ class LeagueEventBridge:
 
         return dispatch
 
+    async def _on_session_start(self):
+        # drop the previous match's event count/history, otherwise the next game silently
+        # dispatches nothing until it passes the old count
+        self.game.reset()
+        await self._fire(LeagueEvent.SessionStart)
+
     def _make_lobby_dispatcher(self, bridge_event: LeagueEvent):
         async def dispatch(event: LCUWebsocketEvent):
+            # the LCU sends a list payload for some lobby transitions - nothing downstream can use it
+            if isinstance(event.data, list):
+                return
             await self._fire(bridge_event, event)
 
         return dispatch
@@ -128,6 +161,7 @@ class LeagueEventBridge:
         try:
             phase = LCUGameflowPhase(event.data)
         except ValueError:
+            log_warning(f"Unknown gameflow phase '{event.data}' - add it to LCUGameflowPhase")
             return
         await self._fire(LeagueEvent.PhaseChanged, phase)
 
@@ -155,11 +189,21 @@ class LeagueEventBridge:
     async def is_in_game(self) -> bool:
         return await self.game.get_client_status() == LeagueClientStatus.CONNECTED
 
+    async def close(self):
+        for task in list(self._tasks):
+            task.cancel()
+        if self._tasks:
+            await asyncio.gather(*self._tasks, return_exceptions=True)
+
+        if self.lcu is not None:
+            await self.lcu.ws.disconnect()
+            await self.lcu.close()
+        await self.game.close()
+
     async def run(self):
         if self.lcu is not None:
             await self.lcu.start_websocket()
         try:
             await self._watcher.run()
         finally:
-            if self.lcu is not None:
-                await self.lcu.ws.disconnect()
+            await self.close()

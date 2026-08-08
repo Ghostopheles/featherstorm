@@ -47,12 +47,14 @@ class LCUWebsocketEventCallbackRegistration:
 class LCUWebsocketClient:
     _port: int
     _auth: str
-    _callbacks: dict[str, list[LCUWebsocketEventCallbackRegistration]] = dict()
-    _task: asyncio.Task | None = None
+    _callbacks: dict[str, list[LCUWebsocketEventCallbackRegistration]]
+    _task: asyncio.Task | None
 
     def __init__(self, port: int, auth: str):
         self._port = port
         self._auth = auth
+        self._callbacks = {}
+        self._task = None
 
     def on(self, event: str, callback: LCUWebsocketEventCallback, type: LCUWebsocketEventType | None = None):
         if self._task:

@@ -65,10 +65,13 @@ class LeagueClient(BaseAPIClient):
             return events.get("Events")
 
     async def get_last_event(self) -> Optional[GameEvent]:
+        if not self._history:
+            return None
         return self._history[-1]
 
     def reset(self):
         self.last_event_count = 0
+        self._history.clear()
 
     def on(self, event_type: GameEventType, callback: GameEventCallback):
         self._callbacks.setdefault(event_type, [])
@@ -105,6 +108,11 @@ class LeagueClient(BaseAPIClient):
                 log_error(f"[error]Encountered an error while dispatching callbacks for event '[heading]{event.EventName}[/heading]'[/]: {str(e)}")
 
     async def on_event(self, eventRaw: dict):
-        event = GameEvent(**eventRaw)
+        try:
+            event = GameEvent.from_dict(eventRaw)
+        except (TypeError, ValueError) as e:
+            log_error(f"[error]Malformed event from the Live Client API[/]: {str(e)} - {eventRaw}", show_locals=False, show_traceback=False)
+            return
+
         self._history.append(event)
         await self.try_fire_callbacks_for_event(event)
