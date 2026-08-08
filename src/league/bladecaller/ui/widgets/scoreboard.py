@@ -2,6 +2,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from league.bladecaller.core.match import ScoreRow
+from league.bladecaller.ui.icons import display_champion_name
 from league.bladecaller.ui.widgets.champion_icon import ChampionIcon
 
 ICON_SIZE = 24
@@ -86,7 +87,7 @@ def _score_row(row: ScoreRow) -> QFrame:
 
     name = QLabel(row.display_name)
     name.setObjectName("scoreName")
-    name.setToolTip(row.champion_name or row.display_name)
+    name.setToolTip(display_champion_name(row.champion_name) or row.display_name)
     layout.addWidget(name, 1)
 
     cells = (

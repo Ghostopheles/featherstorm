@@ -2,9 +2,18 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout,
-    QLineEdit, QPushButton, QSpinBox, QToolButton, QWidget,
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QFileDialog,
+    QHBoxLayout,
+    QLineEdit,
+    QPushButton,
+    QSpinBox,
+    QToolButton,
+    QWidget,
 )
+
 
 @dataclass
 class Editor:
@@ -59,8 +68,7 @@ def make_editor(value: Any, field) -> Editor:
 
     if isinstance(value, int):
         sb = QSpinBox()
-        sb.setRange(int(field.minimum if field.minimum is not None else -10**9),
-                    int(field.maximum if field.maximum is not None else 10**9))
+        sb.setRange(int(field.minimum if field.minimum is not None else -(10**9)), int(field.maximum if field.maximum is not None else 10**9))
         sb.setSuffix(field.suffix)
         sb.setValue(value)
         return Editor(sb, sb.value, sb.setValue)
@@ -69,8 +77,7 @@ def make_editor(value: Any, field) -> Editor:
         sb = QDoubleSpinBox()
         sb.setDecimals(field.decimals if field.decimals is not None else 3)
         sb.setSingleStep(field.step or 0.1)
-        sb.setRange(field.minimum if field.minimum is not None else -1e9,
-                    field.maximum if field.maximum is not None else 1e9)
+        sb.setRange(field.minimum if field.minimum is not None else -1e9, field.maximum if field.maximum is not None else 1e9)
         sb.setSuffix(field.suffix)
         sb.setValue(value)
         return Editor(sb, sb.value, sb.setValue)

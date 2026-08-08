@@ -3,7 +3,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLayout, QSizePolicy,
 
 from league.bladecaller.core.match import MatchDetail, MatchSummary
 from league.bladecaller.ui.components import Badge, Separator, StatTile, repolish
-from league.bladecaller.ui.icons import icons, run_async
+from league.bladecaller.ui.icons import display_champion_name, icons, run_async
 from league.bladecaller.ui.widgets.champion_icon import ChampionIcon
 from league.bladecaller.ui.widgets.scoreboard import Scoreboard
 
@@ -98,7 +98,7 @@ class MatchRow(QFrame):
 
     async def _resolve_champion(self, champion_id: int):
         name = await icons().champion_name(champion_id)
-        self._champion_label.setText(name or f"Champion {champion_id}")
+        self._champion_label.setText(display_champion_name(name) or f"Champion {champion_id}")
 
 
 class MatchDetailPanel(QFrame):

@@ -1,23 +1,55 @@
 """Async, disk-cached pixmap loader for champion / item / spell art.
 
-The loading, caching and scaling machinery is real. The three URL builders at the
-bottom are **stubs** — `DataDragon` has no item/spell/rune icon fetchers yet, so
-they return `None` and every caller falls back to its placeholder. Filling them in
-is a one-line change each and needs no widget changes.
+Champion squares come from `DataDragon.get_art_by_champion_name(..., square)`. The
+item and spell fetchers at the bottom are still **stubs** — `DataDragon` has no
+item/spell/rune icon fetchers yet, so they return `None` and those callers fall
+back to their placeholder. Filling them in needs no widget changes.
 """
 
+import re
 import asyncio
 
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Awaitable, Callable, Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 
 from league import config
-from league.dragon import DataDragon
+from league.dragon import ArtAssetType, DataDragon
 
 _provider: Optional["IconProvider"] = None
+
+# split before an upper-case letter that follows a lower-case one, or that starts a
+# word after an acronym — "MissFortune" → "Miss Fortune", "JarvanIV" → "Jarvan IV"
+_CHAMPION_WORD_BREAK = re.compile(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+
+# every champion whose display name the split above can't reach — punctuation the
+# Data Dragon key drops, or a name that isn't the key at all
+_CHAMPION_DISPLAY_NAMES = {
+    "Belveth": "Bel'Veth",
+    "Chogath": "Cho'Gath",
+    "DrMundo": "Dr. Mundo",
+    "Kaisa": "Kai'Sa",
+    "Khazix": "Kha'Zix",
+    "KogMaw": "Kog'Maw",
+    "KSante": "K'Sante",
+    "Leblanc": "LeBlanc",
+    "MonkeyKing": "Wukong",
+    "Nunu": "Nunu & Willump",
+    "RekSai": "Rek'Sai",
+    "Renata": "Renata Glasc",
+    "Velkoz": "Vel'Koz",
+}
+
+
+def display_champion_name(name: str | None) -> str | None:
+    """Champion key as shown to the user. Never feed this back to Data Dragon —
+    art URLs and id lookups need the unsplit key."""
+    if not name:
+        return name
+    override = _CHAMPION_DISPLAY_NAMES.get(name)
+    return override if override is not None else _CHAMPION_WORD_BREAK.sub(" ", name)
 
 
 def icons() -> "IconProvider":
@@ -66,19 +98,19 @@ class IconProvider:
         name = champion if isinstance(champion, str) else await self.champion_name(champion)
         if not name:
             return None
-        return await self._pixmap(f"champion/{name}", size, lambda d: _champion_square_url(d, name))
+        return await self._pixmap(f"champion/{name}", size, lambda d: _champion_square(d, name))
 
     async def item_pixmap(self, item_id: int, size: int) -> QPixmap | None:
         if not item_id:
             return None
-        return await self._pixmap(f"item/{item_id}", size, lambda d: _item_icon_url(d, item_id))
+        return await self._pixmap(f"item/{item_id}", size, lambda d: _item_icon(d, item_id))
 
     async def spell_pixmap(self, spell_id: int, size: int) -> QPixmap | None:
         if not spell_id:
             return None
-        return await self._pixmap(f"spell/{spell_id}", size, lambda d: _spell_icon_url(d, spell_id))
+        return await self._pixmap(f"spell/{spell_id}", size, lambda d: _spell_icon(d, spell_id))
 
-    async def _pixmap(self, key: str, size: int, url_for: Callable[[DataDragon], str | None]) -> QPixmap | None:
+    async def _pixmap(self, key: str, size: int, fetch: Callable[[DataDragon], Awaitable[bytes | None]]) -> QPixmap | None:
         memory_key = (key, size)
         cached = self._memory.get(memory_key)
         if cached is not None:
@@ -93,13 +125,11 @@ class IconProvider:
         data = self._read_cached(filename)
 
         if data is None:
-            url = url_for(dragon)
-            if url is None:
-                return None
             try:
-                response = await dragon.get_full_url(url, no_json=True)
-                data = response.content
+                data = await fetch(dragon)
             except Exception:
+                return None
+            if not data:
                 return None
             self._write_cached(filename, data)
 
@@ -172,16 +202,16 @@ def _swallow(task: asyncio.Task):
         task.exception()
 
 
-# ── URL builders — stubs until the DataDragon fetchers land ────────────────────
+# ── Fetchers — item/spell are stubs until the DataDragon fetchers land ─────────
 
 
-def _champion_square_url(dragon: DataDragon, champion_name: str) -> str | None:
+async def _champion_square(dragon: DataDragon, champion_name: str) -> bytes | None:
+    return await dragon.get_art_by_champion_name(champion_name, asset_type=ArtAssetType.square)
+
+
+async def _item_icon(dragon: DataDragon, item_id: int) -> bytes | None:
     return None
 
 
-def _item_icon_url(dragon: DataDragon, item_id: int) -> str | None:
-    return None
-
-
-def _spell_icon_url(dragon: DataDragon, spell_id: int) -> str | None:
+async def _spell_icon(dragon: DataDragon, spell_id: int) -> bytes | None:
     return None

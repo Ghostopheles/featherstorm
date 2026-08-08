@@ -7,9 +7,13 @@ from league.bladecaller.ui.widgets.match_row import MatchEntry
 
 ALL_QUEUES = "All queues"
 
+DEFAULT_QUEUE = "Ranked Solo/Duo"
+
 FILTERS = ("All", "Wins", "Losses")
 
 SPLIT_BAR_HEIGHT = 6
+
+RECENT_WINDOW = 20
 
 
 class MatchHistoryPage(Page):
@@ -27,7 +31,7 @@ class MatchHistoryPage(Page):
         self._details: dict[int, MatchDetail] = {}
         self._expanded: int | None = None
         self._filter = FILTERS[0]
-        self._queue = ALL_QUEUES
+        self._queue = DEFAULT_QUEUE
 
         self._subtitle = self.findChild(QLabel, "pageSubtitle")
 
@@ -61,7 +65,8 @@ class MatchHistoryPage(Page):
         row.addStretch()
 
         self._queue_box = QComboBox()
-        self._queue_box.addItem(ALL_QUEUES)
+        self._queue_box.addItems([ALL_QUEUES, DEFAULT_QUEUE])
+        self._queue_box.setCurrentText(self._queue)
         self._queue_box.currentTextChanged.connect(self._set_queue)
         row.addWidget(self._queue_box)
 
@@ -81,6 +86,7 @@ class MatchHistoryPage(Page):
         stats = QHBoxLayout()
         stats.setContentsMargins(0, 0, 0, 0)
         stats.setSpacing(32)
+        stats.addStretch()
         for pair in (self._total, self._wins, self._losses, self._avg_kda, self._avg_cs, self._avg_vision):
             stats.addWidget(pair[0])
         stats.addStretch()
@@ -102,7 +108,21 @@ class MatchHistoryPage(Page):
 
         card.body.addLayout(stats)
         card.body.addWidget(self._split_bar)
+        card.body.addLayout(self._build_winrate())
         return card
+
+    def _build_winrate(self) -> QHBoxLayout:
+        self._winrate_label = StatLabel(f"Last {RECENT_WINDOW}")
+        self._winrate_value = QLabel("—")
+        self._winrate_value.setObjectName("winrateValue")
+
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+        row.addWidget(self._winrate_label)
+        row.addStretch()
+        row.addWidget(self._winrate_value)
+        return row
 
     # ── controller slots ──────────────────────────────────────────────────────
 
@@ -161,10 +181,13 @@ class MatchHistoryPage(Page):
 
         self._queue = self._queue_box.currentText()
 
+    def _queue_filtered(self) -> list[MatchSummary]:
+        if self._queue == ALL_QUEUES:
+            return list(self._matches)
+        return [m for m in self._matches if m.queue_name == self._queue]
+
     def _filtered(self) -> list[MatchSummary]:
-        matches = self._matches
-        if self._queue != ALL_QUEUES:
-            matches = [m for m in matches if m.queue_name == self._queue]
+        matches = self._queue_filtered()
         if self._filter == "Wins":
             matches = [m for m in matches if m.win]
         elif self._filter == "Losses":
@@ -241,8 +264,25 @@ class MatchHistoryPage(Page):
         layout.setStretch(1, losses)
         self._split_bar.setVisible(total > 0)
 
-        queue_label = self._queue if self._queue != ALL_QUEUES else "All queues"
-        self._set_subtitle(f"{queue_label} · {total} games")
+        self._update_winrate()
+
+        self._set_subtitle(f"{self._queue} · {total} games")
+
+    def _update_winrate(self):
+        # the win/loss chips would make the rate meaningless — queue filter only
+        recent = self._queue_filtered()[:RECENT_WINDOW]
+        self._winrate_label.setText(f"Last {len(recent) or RECENT_WINDOW} · {self._queue}")
+
+        if not recent:
+            self._winrate_value.setText("—")
+            self._winrate_value.setProperty("result", "none")
+        else:
+            wins = sum(1 for m in recent if m.win)
+            losses = len(recent) - wins
+            self._winrate_value.setText(f"{wins / len(recent) * 100:.0f}% WR  ·  {wins}W {losses}L")
+            self._winrate_value.setProperty("result", "win" if wins >= losses else "loss")
+
+        repolish(self._winrate_value)
 
     def _set_subtitle(self, text: str):
         if self._subtitle is not None:
@@ -256,8 +296,12 @@ def _stat_pair(value: str, label: str) -> tuple[QWidget, StatValue]:
     layout.setSpacing(2)
 
     stat = StatValue(value)
+    stat.setAlignment(Qt.AlignCenter)
+    text = StatLabel(label)
+    text.setAlignment(Qt.AlignCenter)
+
     layout.addWidget(stat)
-    layout.addWidget(StatLabel(label))
+    layout.addWidget(text)
     return widget, stat
 
 

@@ -495,6 +495,19 @@ QFrame#splitFill {
     border-radius: 3px;
 }
 
+QLabel#winrateValue {
+    font-family: "$FONT_DISPLAY";
+    font-size: 14px;
+    font-weight: 600;
+    color: $TEXT2;
+}
+QLabel#winrateValue[result="win"] {
+    color: $GREEN;
+}
+QLabel#winrateValue[result="loss"] {
+    color: $RED;
+}
+
 /* ── SCROLLING ────────────────────────────────────────────────────────────── */
 
 QScrollArea, QAbstractScrollArea {

@@ -1,15 +1,16 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QRectF
+from PySide6.QtGui import QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import QLabel
 
-from league.bladecaller.ui.icons import icons, run_async
+from league.bladecaller.resources.theme import RADIUS_SM
+from league.bladecaller.ui.icons import display_champion_name, icons, run_async
 
 
 class ChampionIcon(QLabel):
     """Square champion portrait, falling back to the first two letters of the name.
 
-    The art arrives asynchronously — and today never does, since the DataDragon
-    URL builders in `ui/icons.py` are stubs — so the letter placeholder is what
-    renders until those land. No change here is needed when they do.
+    The art arrives asynchronously, so the letter placeholder renders first and is
+    replaced once the DataDragon square lands.
     """
 
     def __init__(self, size: int = 40, parent=None):
@@ -47,9 +48,27 @@ class ChampionIcon(QLabel):
         pixmap = await provider.champion_pixmap(name, self._size)
         if pixmap is not None:
             self.setText("")
-            self.setPixmap(pixmap)
+            self.setPixmap(_rounded(pixmap, RADIUS_SM))
 
     def _set_placeholder(self, name: str | None):
         self.clear()
         self.setText(name[:2].upper() if name else "?")
-        self.setToolTip(name or "")
+        self.setToolTip(display_champion_name(name) or "")
+
+
+def _rounded(pixmap: QPixmap, radius: int) -> QPixmap:
+    """QSS `border-radius` doesn't clip a QLabel's pixmap — the corners get masked here."""
+    out = QPixmap(pixmap.size())
+    out.setDevicePixelRatio(pixmap.devicePixelRatio())
+    out.fill(Qt.transparent)
+
+    path = QPainterPath()
+    path.addRoundedRect(QRectF(pixmap.rect()), radius, radius)
+
+    painter = QPainter(out)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setClipPath(path)
+    painter.drawPixmap(0, 0, pixmap)
+    painter.end()
+
+    return out

@@ -73,11 +73,12 @@ Styling hangs off object names and Qt properties, not per-widget stylesheets:
 | `#badge[variant="win\|loss\|gold\|purple"]` | Result / status pill |
 | `#matchRow` (+ `[expanded="true"]`), `#matchAccent[result="win\|loss"]` | Match list row |
 | `#matchChamp`, `#matchKda`, `#matchMeta`, `#matchDetail` | Match row text + expanded body |
-| `#championIcon`, `#itemSquare[empty="true"]` | Art placeholders |
+| `#championIcon`, `#itemSquare[empty="true"]` | Champion tile + item art placeholders |
 | `#scoreRow[you="true"]`, `#scoreHeader`, `#scoreName`, `#scoreKills`, `#scoreDeaths`, `#scoreAssists`, `#scoreGold` | Scoreboard grid |
 | `#teamPill[team="blue\|red"]` | Scoreboard team headers |
 | `#filterChip[active="true"]` | Match history filter chips |
 | `#splitBar`, `#splitFill` | Win/loss split bar |
+| `#winrateValue[result="win\|loss\|none"]` | Recent-window winrate readout under the split bar |
 
 [`ui/components.py`](ui/components.py) wraps these:
 
@@ -230,7 +231,13 @@ Adding another controller: same shape (`QObject` + signal, asyncio task, no Qt w
 
 [`ui/pages/match_history.py`](ui/pages/match_history.py) filters client-side over the loaded summaries (All/Wins/Losses chips + a queue combo) and recomputes the summary card from the *filtered* set. Only one row is expanded at a time.
 
-Art comes from [`ui/icons.py`](ui/icons.py). `IconProvider` holds two `asyncio.Lock`s and they are both load-bearing — see the quirk below. The loading, disk cache and scaling are real, but the three URL builders at the bottom (`_champion_square_url`, `_item_icon_url`, `_spell_icon_url`) are **stubs returning `None`** — `DataDragon` has no item/spell icon fetchers yet. Every caller falls back to its placeholder (champion tiles show the first two letters, item squares stay empty), so filling those in later is a one-liner each and needs no widget change.
+The queue combo starts on `DEFAULT_QUEUE` (`"Ranked Solo/Duo"`, matched by `MatchSummary.queue_name`). `_refresh_queue_box()` repopulates from the queues actually present in the loaded matches, so a summoner with no solo-queue games silently falls back to `All queues` — the `findText` miss is the fallback, not a bug.
+
+The summary card's stat row is centered (a stretch on both sides), and under the split bar sits the winrate over the last `RECENT_WINDOW` (20) matches of the selected queue. It is computed from `_queue_filtered()`, **not** `_filtered()` — the Wins/Losses chips would otherwise force it to 100%/0%. Order is list order (LCU history is newest first), so `[:RECENT_WINDOW]` is the most recent 20.
+
+Art comes from [`ui/icons.py`](ui/icons.py). `IconProvider` holds two `asyncio.Lock`s and they are both load-bearing — see the quirk below. Champion squares are live: `_champion_square()` calls `DataDragon.get_art_by_champion_name(name, asset_type=ArtAssetType.square)`, and the bytes are cached under `<cache_dir>/dragon/<version>/img/`. The other two fetchers (`_item_icon`, `_spell_icon`) are still **stubs returning `None`** — `DataDragon` has no item/spell icon fetchers yet, so item squares stay empty. Each is a one-liner to fill in and needs no widget change; a fetcher takes the `DataDragon` and returns `bytes | None`.
+
+`ChampionIcon` masks the pixmap's corners itself (`_rounded()`) — QSS `border-radius` doesn't clip a `QLabel`'s pixmap. Until the art arrives the tile shows the first two letters of the champion name, and an unknown id keeps that placeholder.
 
 `LeagueEventBridge` ([`league/bridge.py`](../bridge.py)) is the eventual home for live match events, but it builds its `LCUClient` once in `__init__` and permanently disables out-of-game events if the client wasn't running then — unusable for a desktop app that starts before League. Fix that before wiring the bridge into the UI.
 
