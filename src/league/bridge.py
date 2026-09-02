@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+import logging
 
 from enum import StrEnum
 from pathlib import Path
@@ -11,9 +12,10 @@ from league.lcu import LCUClient
 from league.watcher import MatchWatcher
 from league.models import GameEvent, AllGameData
 from league.lcu.models import LCUGameflowPhase
-from league.console import log_error, log_warning
 from league.enums import GameEventType, LeagueClientStatus
 from league.lcu.socket import LCUWebsocketEvent, LCUWebsocketEventType
+
+log = logging.getLogger(__name__)
 
 type BridgeCallback = Callable[..., Any]
 
@@ -79,7 +81,7 @@ class LeagueEventBridge:
         for event_type in GameEventType:
             bridge_event = _bridge_event_for(event_type)
             if bridge_event is None:
-                log_warning(f"No LeagueEvent member for game event '{event_type}' - it will not be dispatched")
+                log.warning(f"No LeagueEvent member for game event '{event_type}' - it will not be dispatched")
                 continue
             self.game.on(event_type, self._make_game_dispatcher(bridge_event))
 
@@ -92,7 +94,7 @@ class LeagueEventBridge:
                 client_path = Path(config.get("lcu.client_install_path"))
                 self.lcu = LCUClient(client_install_path=client_path)
             except Exception:
-                log_warning("League client not running - out-of-game events disabled")
+                log.warning("League client not running - out-of-game events disabled")
 
         if self.lcu is not None:
             self._register_lcu_dispatchers()
@@ -116,7 +118,7 @@ class LeagueEventBridge:
         try:
             await callback(*args)
         except Exception as e:
-            log_error(f"Error dispatching bridge callback for '{event}': {str(e)}")
+            log.exception(f"Error dispatching bridge callback for '{event}': {e}")
 
     async def _fire(self, event: LeagueEvent, *args):
         # async callbacks run as tasks so a slow handler can't stall the 250ms poll loop or the
@@ -128,7 +130,7 @@ class LeagueEventBridge:
             try:
                 callback(*args)
             except Exception as e:
-                log_error(f"Error dispatching bridge callback for '{event}': {str(e)}")
+                log.exception(f"Error dispatching bridge callback for '{event}': {e}")
 
     def _make_game_dispatcher(self, bridge_event: LeagueEvent):
         async def dispatch(event: GameEvent):
@@ -161,7 +163,7 @@ class LeagueEventBridge:
         try:
             phase = LCUGameflowPhase(event.data)
         except ValueError:
-            log_warning(f"Unknown gameflow phase '{event.data}' - add it to LCUGameflowPhase")
+            log.warning(f"Unknown gameflow phase '{event.data}' - add it to LCUGameflowPhase")
             return
         await self._fire(LeagueEvent.PhaseChanged, phase)
 

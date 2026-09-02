@@ -21,7 +21,8 @@ league-of-snakes/
 │   ├── bridge.py         # LeagueEventBridge + LeagueEvent — unified in-game/out-of-game event hub
 │   ├── cache.py          # DataCache (simple JSON/text file cache under a directory)
 │   ├── companion.py      # run_companion() — async companion mode runner; Effects dataclass + Chroma setup; wires gameflow + Discord presence
-│   ├── console.py        # Rich Console instance + custom theme (Xayah/Rakan/Gold), log/print helpers
+│   ├── markup.py         # Pure markup-string helpers (format_file_path/url/kda/result/duration/player) — no rich, safe for backend messages
+│   ├── reporting.py      # ProgressReporter protocol + NullReporter — backend-facing progress channel
 │   ├── models.py         # GameEvent, ActivePlayer, Player, AllGameData, Match, PlayerMatch, DragonItem, CurrentGameInfo (SPECTATOR-V5)
 │   ├── enums/            # Enum package
 │   │   ├── __init__.py   # re-exports everything below
@@ -37,7 +38,7 @@ league-of-snakes/
 │   ├── dragon.py         # CommunityDataDragon (champion/item metadata)
 │   ├── predicates.py     # Predicate[T] composable predicate system (@rule decorator, &/|/~ operators)
 │   ├── riot_api.py       # RiotAPIClient (PUUID, matches, summoner, ranked data, live match via SPECTATOR-V5)
-│   ├── timeline.py       # MatchTimelineAnalyzer, HighlightEvent, ParticipantPositionTrack (Riot API match timeline → highlights)
+│   ├── timeline.py       # MatchTimelineAnalyzer, HighlightEvent, ParticipantPositionTrack (Riot API match timeline → highlights) — analysis only, no rendering
 │   ├── highlights.py     # HighlightManager (replay download, open replay client, OBS-style recording of clip ranges)
 │   ├── watcher.py        # MatchWatcher (session lifecycle, reconnect logic, event routing)
 │   ├── cli/              # Typer CLI package — primary entry point (featherstorm)
@@ -49,6 +50,21 @@ league-of-snakes/
 │   │   ├── riot.py       # riot_app (matches, match, timeline, puuid, ranked, live-game)
 │   │   ├── highlights.py # highlights_app
 │   │   └── dragon.py     # dragon_app (item, champion, art)
+│   ├── ui/               # Terminal rendering layer — the only place that writes to the console
+│   │   ├── __init__.py   # public surface (output, console, setup_logging, render, RichProgressReporter, MatchRow)
+│   │   ├── theme.py      # THEME + colour constants (Xayah/Rakan/Gold)
+│   │   ├── console.py    # Rich Console singleton + get_console()
+│   │   ├── output.py     # Output facade (print/json/rule/info/success/warning/error/prompt/status/progress) + `output` default
+│   │   ├── registry.py   # @singledispatch render(obj) -> RenderableType, Pretty fallback
+│   │   ├── logging.py    # setup_logging() — installs RichHandler on the shared Console
+│   │   ├── progress.py   # RichProgressReporter (terminal impl of league.reporting.ProgressReporter)
+│   │   ├── viewmodels.py # MatchRow (presentation-only dataclasses)
+│   │   └── renderers/    # Pure sync model → renderable functions
+│   │       ├── matches.py  # match_table(rows), new_table()
+│   │       ├── ladder.py   # ranked_ladder_table(), format_ladder_name()
+│   │       ├── items.py    # item_panel() (DDragon pseudo-HTML → markup)
+│   │       ├── timeline.py # player_timeline_panel()
+│   │       └── events.py   # EventFeedContext, describe_event(), format_event_line(), FEED_EVENTS
 │   ├── bladecaller/      # PySide6 desktop UI (Dashboard, Match History, Settings) — see src/league/bladecaller/CLAUDE.md
 │   ├── discord/
 │   │   ├── presence.py         # DiscordRichPresence, DiscordActivity — generic pypresence wrapper
@@ -204,10 +220,13 @@ LCU websocket (wss://localhost:<port>, lockfile auth)
 - **`LeagueRichPresence`** ([league/discord/league_presence.py](src/league/discord/league_presence.py)) — League-aware presence. Tracks `SessionStatus` (Empty/InLobby/InQueue/InGame). `init_lobby()` from LCU lobby data (queue description, party size), `init_match()` from `AllGameData` (champion + lane opponent, skin splash as large image, role icon as small image), 15s update loop pushes KDA/CS state. `try_update_queue_type()` resolves queue via Riot SPECTATOR-V5 live match.
 - **`CurrentGameInfo`** ([league/models.py](src/league/models.py)) — SPECTATOR-V5 active-game model (`gameQueueConfigId`, participants, bans).
 - **`Effects`** ([league/companion.py](src/league/companion.py)) — `@dataclass` holding Chroma effect state. Fields: `blue`, `red`, `white` (static base effect IDs), plus flash animation fields (`kill_flash`, `teammate_kill_flash`, `objective_flash`, `turret_flash`, `teammate_turret_flash`, `first_brick_flash`) — each `dict[Optional[GameTeam], ChromaAnimation]` keyed by team so animation fades back to correct base color.
-- **`MatchWatcher`** ([league/watcher.py](src/league/watcher.py)) — wraps `LeagueClient`, manages session lifecycle (connect → poll → disconnect → reconnect). Key methods: `watcher.on(event_type, callback)`, `@watcher.on_session_start`, `@watcher.on_session_end`, `await watcher.run()`. Config keys: `companion.max_reconnect_attempts`, `companion.wait_interval`, `companion.poll_interval`, `companion.session_timeout`. Uses `LeagueClientStatus` to decide reconnect vs clean exit. Ctor param `exit_on_timeout` (default `True`): when `False`, `run()` keeps waiting forever instead of exiting after `session_timeout` with no game (used by `LeagueEventBridge`).
+- **`MatchWatcher`** ([league/watcher.py](src/league/watcher.py)) — wraps `LeagueClient`, manages session lifecycle (connect → poll → disconnect → reconnect). Key methods: `watcher.on(event_type, callback)`, `@watcher.on_session_start`, `@watcher.on_session_end`, `await watcher.run()`. Config keys: `companion.max_reconnect_attempts`, `companion.wait_interval`, `companion.poll_interval`, `companion.session_timeout`. Uses `LeagueClientStatus` to decide reconnect vs clean exit. Ctor param `exit_on_timeout` (default `True`): when `False`, `run()` keeps waiting forever instead of exiting after `session_timeout` with no game (used by `LeagueEventBridge`). Ctor param `reporter` (default `NullReporter()`): drives the "waiting for client/match" spinner — `run_companion()` passes a `RichProgressReporter`.
 - **`LeagueEventBridge`** ([league/bridge.py](src/league/bridge.py)) — top-level unified event hub bridging in-game (Live Client API via `MatchWatcher`) and out-of-game (LCU websocket) events. `bridge.on(LeagueEvent.X, cb)` (decorator-or-direct, sync or async), `await bridge.run()`. `LeagueEvent` StrEnum = all `GameEventType` members (payload `GameEvent`) + `LobbyCreated/Updated/Deleted` (payload `LCUWebsocketEvent`) + `PhaseChanged` (payload `LCUGameflowPhase`, via ws endpoint `/lol-gameflow/v1/gameflow-phase`) + `SessionStart`/`SessionEnd` (no args). Registers internal fan-out dispatchers in `__init__` so user callbacks can be added after ws connect. Exposes `bridge.game` (`LeagueClient`) and `bridge.lcu` (`LCUClient`, `None` when League client not running — out-of-game events disabled with warning). Helpers: `get_phase()`, `get_game_data()`, `is_in_game()`, `close()`. Async callbacks are dispatched as tasks (tracked in `_tasks`, cancelled by `close()`) so a slow handler can't stall the poll loop — they run concurrently, not serialized; sync callbacks still run inline. `close()` also disconnects the websocket and `aclose()`s both httpx clients, and `run()` calls it in a `finally`. Additive — `run_companion()` does not use it.
 - **`MatchTimelineAnalyzer`** ([league/timeline.py](src/league/timeline.py)) — analyzes Riot API `MatchTimeline` for highlight events using composable `Predicate` rules. `get_highlight_events()` → `list[HighlightEvent]`. `ParticipantPositionTrack` provides linear-interpolated position at any timestamp.
 - **`Predicate[T]`** ([league/predicates.py](src/league/predicates.py)) — composable boolean predicate wrapping a `T → bool` function. Supports `&`, `|`, `~` operators. `@rule` decorator registers named factories. `load_rule_from_config(path)` / `load_rule_from_dict(config)` build predicates from JSON config.
+- **`Output`** ([league/ui/output.py](src/league/ui/output.py)) — the console facade; module-level instance `output`. `print()` (routes through `render()`), `json()`, `rule()`, `info/success/warning/error()`, `prompt()`, `status(msg)` (project spinner baked in), `progress(*columns)`. Every CLI command writes through this.
+- **`ProgressReporter`** ([league/reporting.py](src/league/reporting.py)) — `Protocol` with `message()`, `step()`, `advance()`, `task(description, total=None)`. `NullReporter` is the no-op default; `RichProgressReporter` ([league/ui/progress.py](src/league/ui/progress.py)) is the terminal implementation (indeterminate `task` → spinner + elapsed, `total=` → bar + M-of-N). Lets backend code report progress without importing rich.
+- **`MatchRow`** ([league/ui/viewmodels.py](src/league/ui/viewmodels.py)) — presentation-only match view shared by the Riot and LCU match-history commands; `match_table()` shows the Position column only when rows carry one, Game Mode likewise.
 - **`GoveeConnectionListener`** ([govee package](../govee/src/govee/govee.py)) — discovers + manages Govee smart lights over LAN UDP. `listener.devices: dict[str, GoveeDevice]` holds discovered devices by IP. Started before Chroma session; `GOVEE_REQUEST_TIMEOUT` (0.5s) awaited after start for discovery.
 
 ### Team → Effect Mapping
@@ -242,7 +261,24 @@ All Chroma effects created at startup via `setup_chroma_effects()` in [league/co
 ### Adding a New Event Handler
 
 - Add event to `GameEventType` in [league/enums.py](league/enums.py) if missing. Value must be exact string Live Client API returns.
-- Register a callback via `watcher.on(GameEventType.<New>, cb)` in `run_companion` ([league/companion.py](src/league/companion.py)) for lighting. For console kill-feed output, add a handler + `watcher.on(...)` line in `register_event_feed` ([league/companion.py](src/league/companion.py)).
+- Register a callback via `watcher.on(GameEventType.<New>, cb)` in `run_companion` ([league/companion.py](src/league/companion.py)) for lighting. For console kill-feed output, add a `case` to `describe_event()` and the event to `FEED_EVENTS` ([league/ui/renderers/events.py](src/league/ui/renderers/events.py)) — `register_event_feed` in companion wires every member of `FEED_EVENTS` to one callback.
+
+## Rendering Layer
+
+`src/league/ui/` owns every byte written to the terminal. Four rules:
+
+1. **Renderers are pure and sync** — domain/view model in, `RenderableType` out. No `await`, no console, no I/O. Anything a renderer needs (champion names, resolved item names) is fetched by the caller first.
+2. **Only `ui/output.py` and `ui/console.py` touch the `Console`.** Commands call `output.print(...)`, never `console.print(...)`.
+3. **Backend modules never import rich** and never import `league.ui`. They emit data (return values), diagnostics (`logging.getLogger(__name__)`), and progress (an injected `league.reporting.ProgressReporter`). The only ui-adjacent import they may take is `league.markup` — pure markup strings, zero rich.
+4. **Markup is produced in the ui layer**, with one sanctioned exception: log and reporter messages may carry markup, since `RichHandler` is installed with `markup=True`.
+
+Diagnostics: `setup_logging()` ([league/ui/logging.py](src/league/ui/logging.py)) is called from the CLI callback and installs a `RichHandler` on the shared Console (httpx/websockets/asyncio pinned to WARNING). Bladecaller configures its own handlers — it imports nothing from `league.ui`.
+
+Per-model rendering: `render()` ([league/ui/registry.py](src/league/ui/registry.py)) is a `functools.singledispatch` — register a concrete model type in a renderer module to give it a default view; unregistered objects fall back to `rich.Pretty` (the old `print(model)` behaviour). Models themselves stay rich-free — no `__rich__` on anything in `models.py`.
+
+Adding a renderer: write a pure function in `ui/renderers/`, export it from `ui/renderers/__init__.py`, and call it from the command as `output.print(my_renderer(data))`. Reuse `new_table()` ([league/ui/renderers/matches.py](src/league/ui/renderers/matches.py)) for the project's table style and the `format_*` helpers in [league/markup.py](src/league/markup.py) for KDA/result/duration/player cells.
+
+Progress from backend code: take a `ProgressReporter` in the constructor, default to `NullReporter()`, and call `reporter.message()` / `reporter.step()` / `reporter.advance()` / `with reporter.task(desc, total=...)`. The CLI/composition root injects `RichProgressReporter()`. `HighlightManager` and `MatchWatcher` both work this way.
 
 ## Bladecaller UI
 

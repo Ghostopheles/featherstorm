@@ -1,5 +1,6 @@
 import httpx
 import asyncio
+import logging
 
 from pathlib import Path
 from typing import Optional
@@ -7,12 +8,13 @@ from dataclasses import dataclass
 
 from league.enums import Queue
 from league.lcu.models import *
-from league.console import print
 from league.dragon import DataDragon
 from league.http import BaseAPIClient
 
 from league.lcu.socket import LCUWebsocketClient, LCUWebsocketEventCallback
 from league.lcu.exceptions import LCUMissingReplayMetadataException, LCUIncompatibleReplayException
+
+log = logging.getLogger(__name__)
 
 FALLBACK_LOCKFILE_PATH = Path("F:/Games/League of Legends/lockfile")
 
@@ -219,7 +221,7 @@ class LCUClient(BaseAPIClient):
 
         download_state = LCUReplayDownloadStatus.NotStarted
         res = await start_download(matchID)
-        print(f"replay download start status: {res.status_code}")
+        log.debug(f"replay download start status: {res.status_code}")
         for _ in range(10):
             download_state = await check_download(matchID)
             match download_state:
@@ -231,9 +233,9 @@ class LCUClient(BaseAPIClient):
                     await asyncio.sleep(1)
                 case LCUReplayDownloadStatus.NotStarted | LCUReplayDownloadStatus.Retry:
                     start_res = await start_download(matchID)
-                    print(f"replay download retry status: {start_res.status_code}")
+                    log.debug(f"replay download retry status: {start_res.status_code}")
                 case _:
-                    print(f"status: {download_state}")
+                    log.debug(f"replay download state: {download_state}")
                     break
 
         return download_state
@@ -250,7 +252,7 @@ class LCUClient(BaseAPIClient):
 
         if metadata.get("state") != LCUReplayState.Watch:
             success = await self.download_replay(matchID)
-            print(f"download success: {success}")
+            log.debug(f"replay download success: {success}")
 
         return await self.post(f"/lol-replays/v1/rofls/{matchID}/watch", json={"gameId": matchID})
 
@@ -264,7 +266,7 @@ class LCUClient(BaseAPIClient):
         try:
             return PlayerRoleMapping[(lane, role)]
         except KeyError:
-            print(f"[warning]Unable to find position for lane={lane}, role={role}[/]")
+            log.warning(f"Unable to find position for lane={lane}, role={role}")
             return LCUPosition.Unknown
 
     async def get_inventory(self):

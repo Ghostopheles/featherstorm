@@ -1,6 +1,7 @@
 import os
 import httpx
 import asyncio
+import logging
 
 from pathlib import Path
 from dotenv import load_dotenv
@@ -9,9 +10,10 @@ from PySide6.QtCore import QObject, Signal
 
 from league import config
 from league.lcu import LCUClient
-from league.console import log_error
 from league.riot_api import RiotAPIClient
 from league.bladecaller.core.match import MatchSummary, MatchDetail
+
+log = logging.getLogger(__name__)
 
 DEFAULT_PAGE_SIZE = 20
 
@@ -144,7 +146,7 @@ class MatchHistoryController(QObject):
             else:
                 detail = MatchDetail.from_summary(summary, note=UNAVAILABLE_MESSAGE)
         except Exception as exc:
-            log_error(f"[error]Match detail for {summary.match_id} failed[/]: {exc!r}", show_locals=False, show_traceback=False)
+            log.error(f"Match detail for {summary.match_id} failed: {exc!r}")
             await self._drop_riot()
             detail = MatchDetail.from_summary(summary, note=RIOT_FAILED_MESSAGE)
 

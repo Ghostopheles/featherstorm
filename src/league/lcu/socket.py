@@ -2,13 +2,14 @@ import ssl
 import json
 import asyncio
 import inspect
+import logging
 import websockets
 
 from enum import StrEnum
 from dataclasses import dataclass
 from typing import Callable, Any
 
-from league.console import print, log, log_error, log_warning
+log = logging.getLogger(__name__)
 
 SOCKET_URL = "wss://localhost"
 WS_MAX_SIZE = 2**32
@@ -93,7 +94,7 @@ class LCUWebsocketClient:
                     else:
                         handler.callback(event)
                 except Exception as e:
-                    log_error(f"{str(e)} calling handler for WS event '{event.eventName}'")
+                    log.exception(f"{e} calling handler for WS event '{event.eventName}'")
 
     async def _listen(self):
         async for socket in websockets.connect(
@@ -105,9 +106,9 @@ class LCUWebsocketClient:
                 else:
                     for eventName in self._callbacks:
                         await socket.send(f'[5, "{eventName}"]')
-                        log(f"Subscribed to websocket event '{eventName}'")
+                        log.info(f"Subscribed to websocket event '{eventName}'")
 
-                log("Connected to LCU websocket")
+                log.info("Connected to LCU websocket")
 
                 async for message in socket:
                     if not message:
@@ -118,7 +119,7 @@ class LCUWebsocketClient:
 
     def _on_task_done(self, task: asyncio.Task) -> None:
         if not task.cancelled():
-            log_warning("Websocket listener closed")
+            log.warning("Websocket listener closed")
 
     async def connect(self):
         if self._task and not self._task.done():

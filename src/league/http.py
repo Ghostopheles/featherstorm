@@ -2,8 +2,11 @@ import json
 import time
 import httpx
 import asyncio
+import logging
 
-from league.console import log_error, format_url
+from league.markup import format_url
+
+log = logging.getLogger(__name__)
 
 
 class BaseAPIClient:
@@ -21,21 +24,15 @@ class BaseAPIClient:
                 return res.json()
             except json.decoder.JSONDecodeError:
                 if res.status_code != 204 and not _suppress_exception:
-                    log_error(f"[error]JSON decode error from {format_url(res.request.url)}[/]")
+                    log.error(f"[error]JSON decode error from {format_url(res.request.url)}[/]")
                 return None
         except httpx.HTTPStatusError as e:
             if not _suppress_exception:
-                log_error(
-                    f"[error]HTTP Status Error ({e.response.status_code}) from {format_url(e.request.url)}[/]: {str(e)}",
-                    show_locals=False,
-                    show_traceback=False,
-                )
+                log.error(f"[error]HTTP Status Error ({e.response.status_code}) from {format_url(e.request.url)}[/]: {e}")
             return e if _return_exception else None
         except httpx.RequestError as e:
             if not _suppress_exception:
-                log_error(
-                    f"[error]HTTP Request Error ({type(e).__name__}) from {format_url(e.request.url)}[/]: {str(e)}", show_locals=False, show_traceback=False
-                )
+                log.error(f"[error]HTTP Request Error ({type(e).__name__}) from {format_url(e.request.url)}[/]: {e}")
             return e if _return_exception else None
 
     async def get(self, *args, **kwargs):

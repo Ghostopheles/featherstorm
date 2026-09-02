@@ -1,128 +1,25 @@
-import re
 import typer
 import asyncio
 
 from pathlib import Path
 
-from rich.box import ROUNDED
-from rich.text import Text
-from rich.panel import Panel
-from rich.table import Table
-from rich.columns import Columns
-from rich.console import Group
-
+from league.ui import output
+from league.markup import format_file_path
+from league.ui.renderers import item_panel
 from league.dragon import DataDragon, ArtAssetType
-from league.models import DragonItem
-from league.console import console, print, format_file_path
 
 app = typer.Typer(name="dragon", no_args_is_help=True, help="DataDragon API commands")
 
-# DDragon ships descriptions as pseudo-HTML. Map known tags -> Rich markup.
-_DESC_TAGS = {
-    "stats": ("[gold]", "[/gold]"),
-    "attention": ("[bold white]", "[/bold white]"),
-    "active": ("[bold rakan]", "[/bold rakan]"),
-    "passive": ("[bold xayah]", "[/bold xayah]"),
-    "keyword": ("[bold]", "[/bold]"),
-    "rules": ("[dim italic]", "[/dim italic]"),
-    "magicDamage": ("[blue]", "[/blue]"),
-    "physicalDamage": ("[red]", "[/red]"),
-    "trueDamage": ("[gold]", "[/gold]"),
-    "healing": ("[green]", "[/green]"),
-    "scaleAP": ("[blue]", "[/blue]"),
-    "scaleAD": ("[red]", "[/red]"),
-}
 
-_STAT_ABBR = {
-    "Flat": "",
-    "Percent": "%",
-    "Mod": "",
-    "HPPool": "Health",
-    "MPPool": "Mana",
-    "MagicDamage": "Ability Power",
-    "PhysicalDamage": "Attack Damage",
-    "SpellBlock": "Magic Resist",
-    "HPRegen": "Health Regen",
-    "MPRegen": "Mana Regen",
-    "MovementSpeed": "Move Speed",
-    "CritChance": "Crit Chance",
-    "AttackSpeed": "Attack Speed",
-}
+async def _resolve_item_names(dragon: DataDragon, ids: list[str] | None) -> list[str]:
+    if not ids:
+        return []
 
-
-def _humanize_stat(key: str) -> str:
-    is_percent = key.startswith("Percent")
-    for raw, friendly in _STAT_ABBR.items():
-        key = key.replace(raw, friendly)
-    key = re.sub(r"(?<!^)(?=[A-Z])", " ", key)
-    key = re.sub(r"\s+", " ", key).strip()
-    return f"{key} (%)" if is_percent else key
-
-
-def _clean_description(desc: str) -> Text:
-    # Leading <stats> block duplicates the stat table — drop it.
-    desc = re.sub(r"<stats>.*?</stats>", "", desc, flags=re.DOTALL)
-    desc = re.sub(r"</?mainText>", "", desc)
-    desc = re.sub(r"<br\s*/?>", "\n", desc)
-
-    def repl(m: re.Match) -> str:
-        closing, tag = m.group(1), m.group(2)
-        markup = _DESC_TAGS.get(tag)
-        if markup is None:
-            return ""
-        return markup[1] if closing else markup[0]
-
-    desc = re.sub(r"<(/?)(\w+)>", repl, desc)
-    desc = re.sub(r"\n{3,}", "\n\n", desc).strip()
-    return Text.from_markup(desc)
-
-
-async def _build_item_panel(item: DragonItem, item_id: int, dragon: DataDragon) -> Panel:
-    sections = []
-
-    if item.plaintext:
-        sections.append(Text(item.plaintext, style="italic light_gray"))
-
-    if item.stats:
-        stat_table = Table.grid(padding=(0, 2))
-        stat_table.add_column(style="gold", justify="right")
-        stat_table.add_column(style="bold")
-        for key, value in item.stats.items():
-            num = value * 100 if key.startswith("Percent") else value
-            num = int(num) if num == int(num) else num
-            stat_table.add_row(f"+{num}", _humanize_stat(key))
-        sections.append(stat_table)
-
-    if item.description:
-        sections.append(_clean_description(item.description))
-
-    async def resolve(ids: list[str]) -> str:
-        names = []
-        for id_str in ids:
-            sub = await dragon.get_item(int(id_str))
-            names.append(sub.name if sub else id_str)
-        return ", ".join(names)
-
-    if item.builds_from:
-        sections.append(Text.from_markup(f"[dark_rakan]Builds from:[/] {await resolve(item.builds_from)}"))
-    if item.builds_into:
-        sections.append(Text.from_markup(f"[dark_rakan]Builds into:[/] {await resolve(item.builds_into)}"))
-
-    if item.tags:
-        chips = Columns([Text(f" {t} ", style="featherstorm_bg") for t in item.tags], padding=(0, 1))
-        sections.append(chips)
-
-    gold = item.gold
-    subtitle = Text.from_markup(f"[gold]{gold.total}g[/] total   [eminence_dim]{gold.base}g combine[/]   [eminence_dim]{gold.sell}g sell[/]")
-
-    return Panel(
-        Group(*sections),
-        title=Text.from_markup(f"[featherstorm]{item.name}[/] [light_gray]#{item_id}[/]"),
-        subtitle=subtitle,
-        border_style="xayah",
-        box=ROUNDED,
-        padding=(1, 2),
-    )
+    names = []
+    for id_str in ids:
+        item = await dragon.get_item(int(id_str))
+        names.append(item.name if item else id_str)
+    return names
 
 
 @app.command(name="item", help="Get item info by ID")
@@ -132,9 +29,12 @@ def dragon_item(item_id: int):
         await dragon.initialize()
         item = await dragon.get_item(item_id)
         if item is None:
-            print(f"[bold red]Item {item_id} not found[/bold red]")
+            output.error(f"Item {item_id} not found")
             return
-        console.print(await _build_item_panel(item, item_id, dragon))
+
+        builds_from = await _resolve_item_names(dragon, item.builds_from)
+        builds_into = await _resolve_item_names(dragon, item.builds_into)
+        output.print(item_panel(item, item_id, builds_from, builds_into))
 
     asyncio.run(run())
 
@@ -146,9 +46,9 @@ def dragon_champion(champion_id: int):
         await dragon.initialize()
         champion = await dragon.get_champion(champion_id)
         if champion is None:
-            print(f"[bold red]Champion {champion_id} not found[/bold red]")
+            output.error(f"Champion {champion_id} not found")
             return
-        print(champion)
+        output.print(champion)
 
     asyncio.run(run())
 
@@ -175,10 +75,10 @@ def dragon_splash(champion_name: str, skin: int = 0, asset_type: ArtAssetType = 
 
         asset = await dragon.get_art_by_champion_name(champion_name, skin, asset_type)
         if asset is None:
-            print(f"[bold red]Champion {champion_name} not found[/bold red]")
+            output.error(f"Champion {champion_name} not found")
             return
 
         output_path.write_bytes(asset)
-        print(f"[bold green]Saved splash art to {format_file_path(output_path)}[/bold green]")
+        output.success(f"Saved splash art to {format_file_path(output_path)}")
 
     asyncio.run(run())

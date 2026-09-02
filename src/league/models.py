@@ -1,9 +1,13 @@
+import logging
+
 from enum import Enum
 from typing import Optional
 from pydantic import BaseModel
 from dataclasses import dataclass, field, fields
 
 from league.enums import GameEventType, GameResult, GameTeam, Queue, Map, RankedQueueType, RankedTier, RankedDivision
+
+log = logging.getLogger(__name__)
 
 
 def cast_to_enum(value, enum: Enum):
@@ -415,7 +419,7 @@ class Turret:
     def from_str(cls, name: str):
         name_split = name.split("_")
         if len(name_split) < 4:
-            print(name)
+            log.warning(f"Unrecognised turret name '{name}'")
             return cls(GameTeam.SPECTATOR, Lane.Middle, TurretTier.Outer)
 
         team = name_split[1].replace("T", "").upper()

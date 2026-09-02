@@ -7,13 +7,16 @@ from dotenv import load_dotenv
 from typing import Optional, Annotated
 
 from league import config
+from league.markup import format_file_path
 from league.highlights import HighlightManager
-from league.console import print, format_file_path
+from league.ui import output, RichProgressReporter
 from league.enums import QueueChoice, resolve_queue
 
 from league.cli._shared import try_get_cfg_or_input
 
 app = typer.Typer(name="highlights", no_args_is_help=True, help="Highlight capture commands")
+
+REPORTER_PREFIX = r"[highlights]\[highlights][/]: "
 
 
 @app.command(name="capture", help="Capture highlights from your last match.")
@@ -37,7 +40,7 @@ def capture_highlights(
         if was_input:
             if game_path.exists() and game_path.is_dir():
                 config.set("lcu.client_install_path", game_path.as_posix())
-                print(f"Saved client install path ({format_file_path(game_path)}) to config")
+                output.print(f"Saved client install path ({format_file_path(game_path)}) to config")
             else:
                 raise SystemError("you've given me a bungus game path")
 
@@ -47,12 +50,13 @@ def capture_highlights(
         if was_input:
             if export_path.exists() and export_path.is_dir():
                 config.set("highlights.export_path", export_path.as_posix())
-                print(f"Saved highlight export path ({format_file_path(export_path)}) to config")
+                output.print(f"Saved highlight export path ({format_file_path(export_path)}) to config")
             else:
                 raise SystemError("you've given me a bungus export path")
 
     async def run():
-        highlights = await HighlightManager.create(name, tagline, game_path, export_path, api_key)
+        reporter = RichProgressReporter(prefix=REPORTER_PREFIX)
+        highlights = await HighlightManager.create(name, tagline, game_path, export_path, api_key, reporter)
         last_match_id = await highlights.get_last_match_id(queue_type)
         await highlights.capture_highlights_for_match(last_match_id, numHighlights=count)
 

@@ -8,7 +8,6 @@ from league.config import get_str
 from league.cache import DataCache
 from league.models import DragonItem
 from league.http import BaseAPIClient
-from league.console import format_file_path, print
 
 CACHE_DIR = Path(get_str("cache_dir", "meta", "./data"))
 DRAGON_PATH = CACHE_DIR / "dragon"

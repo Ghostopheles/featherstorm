@@ -1,17 +1,20 @@
+import time
 import inspect
 import asyncio
+import logging
 
 from typing import Callable, Any
-from rich.progress import Progress, SpinnerColumn, TimeElapsedColumn, TextColumn, BarColumn
 
 from league import config
 from league.models import GameEvent
 from league.api import LeagueClient
+from league.reporting import ProgressReporter, NullReporter
 from league.enums import GameEventType, LeagueClientStatus
-from league.console import log, log_warning, console
 
 type SessionCallback = Callable[[], Any]
 type EventCallback = Callable[[GameEvent], Any]
+
+log = logging.getLogger(__name__)
 
 MAX_RECONNECT_ATTEMPTS = config.get_int("companion.max_reconnect_attempts", default=5)
 WAIT_INTERVAL = config.get_float("companion.wait_interval", default=2.0)
@@ -26,9 +29,10 @@ class MatchWatcher:
     _retries: int = 0
     _is_reconnecting: bool = False
 
-    def __init__(self, client: LeagueClient, exit_on_timeout: bool = True):
+    def __init__(self, client: LeagueClient, exit_on_timeout: bool = True, reporter: ProgressReporter | None = None):
         self._client = client
         self._exit_on_timeout = exit_on_timeout
+        self._reporter = reporter or NullReporter()
         self._session_start_callbacks = []
         self._session_end_callbacks = []
 
@@ -77,28 +81,20 @@ class MatchWatcher:
         return last.EventName != GameEventType.GameEnd
 
     async def _wait_for_session(self):
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(pulse_style="featherstorm"),
-            TimeElapsedColumn(),
-            console=console,
-            transient=True,
-        ) as progress:
-            task = progress.add_task("[yellow]Polling[/]", total=None)
-            start = progress.get_time()
-            while not progress.finished:
-                elapsed = progress.get_time() - start
-                if elapsed >= SESSION_TIMEOUT:
+        with self._reporter.task("[yellow]Polling[/]"):
+            start = time.monotonic()
+            while True:
+                if time.monotonic() - start >= SESSION_TIMEOUT:
                     return False
 
                 status = await self._client.get_client_status()
                 if status == LeagueClientStatus.DISCONNECTED:
-                    progress.update(task, description="[yellow]Waiting for client[/]")
+                    self._reporter.step("[yellow]Waiting for client[/]")
                 elif status == LeagueClientStatus.LOADING:
-                    progress.update(task, description="[yellow]Waiting for match[/]")
+                    self._reporter.step("[yellow]Waiting for match[/]")
                 else:
-                    progress.update(task, description="[green]Done![/]", total=1, completed=1)
+                    self._reporter.step("[green]Done![/]")
+                    return True
 
                 if self._is_reconnecting:
                     if self._retries >= MAX_RECONNECT_ATTEMPTS:
@@ -106,13 +102,12 @@ class MatchWatcher:
                     self._retries += 1
 
                 await asyncio.sleep(WAIT_INTERVAL)
-            return True
 
     async def _poll_session(self):
         while True:
             status = await self._client.get_client_status()
             if status == LeagueClientStatus.BANISHED:
-                log("[warning]League client disconnected - retrying.[/]")
+                log.warning("[warning]League client disconnected - retrying.[/]")
                 self._is_reconnecting = await self._should_try_reconnect()
                 self._retries = 0
                 return
@@ -124,16 +119,16 @@ class MatchWatcher:
         while True:
             connected = await self._wait_for_session()
             if connected:  # we've exhausted our retries, or gracefully disconnected
-                verb = f"reconnected after [highlight]{self._retries}[/highlight] attempt(s)" if self._is_reconnecting else "connected"
-                log(f"[green]League client {verb}.[/]")
+                verb = f"reconnected after [heading]{self._retries}[/heading] attempt(s)" if self._is_reconnecting else "connected"
+                log.info(f"[green]League client {verb}.[/]")
             elif self._is_reconnecting:
                 self._is_reconnecting = False
-                log_warning(f"[warning]Failed to reconnect to League client after [highlight]{self._retries}[/highlight] attempt(s)[/]")
+                log.warning(f"[warning]Failed to reconnect to League client after [heading]{self._retries}[/heading] attempt(s)[/]")
                 break
             else:
                 if not self._exit_on_timeout:
                     continue
-                log(f"League client disconnected.")
+                log.info("League client disconnected.")
                 break
 
             await self._fire(self._session_start_callbacks)

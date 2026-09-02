@@ -1,15 +1,17 @@
 import httpx
 import inspect
+import logging
 
 from typing import Callable, Optional
 
 from league.http import BaseAPIClient
-from league.console import log_error
 from league.enums import GameEventType, LeagueClientStatus
 from league.models import ActivePlayer, AllGameData, GameEvent, GameTeam
 
 DEFAULT_RIOT_API_REGION = "na1"
 
+
+log = logging.getLogger(__name__)
 
 type GameEventCallback = Callable[[GameEvent], None]
 
@@ -105,13 +107,13 @@ class LeagueClient(BaseAPIClient):
                 else:
                     callback(event)
             except Exception as e:
-                log_error(f"[error]Encountered an error while dispatching callbacks for event '[heading]{event.EventName}[/heading]'[/]: {str(e)}")
+                log.exception(f"[error]Encountered an error while dispatching callbacks for event '[heading]{event.EventName}[/heading]'[/]: {e}")
 
     async def on_event(self, eventRaw: dict):
         try:
             event = GameEvent.from_dict(eventRaw)
         except (TypeError, ValueError) as e:
-            log_error(f"[error]Malformed event from the Live Client API[/]: {str(e)} - {eventRaw}", show_locals=False, show_traceback=False)
+            log.error(f"[error]Malformed event from the Live Client API[/]: {e} - {eventRaw}")
             return
 
         self._history.append(event)

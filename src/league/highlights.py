@@ -3,14 +3,6 @@ import httpx
 import signal
 import asyncio
 
-from rich.progress import (
-    Progress,
-    BarColumn,
-    TextColumn,
-    MofNCompleteColumn,
-    TimeElapsedColumn,
-)
-
 from pathlib import Path
 from typing import Optional
 
@@ -22,7 +14,8 @@ from league.models import PlayerMatch, TimelineEvent, MatchTimeline
 from league.enums import MatchType, Queue
 from league.timeline import MatchTimelineAnalyzer, HighlightEvent
 from league.riot_api import RiotAPIClient
-from league.console import console, format_file_path
+from league.markup import format_file_path
+from league.reporting import ProgressReporter, NullReporter
 
 LAUNCH_POLL_INTERVAL = 1
 LAUNCH_TIMEOUT = 60
@@ -39,11 +32,6 @@ TRAIL_BUFFER = 7  # seconds
 CAMERA_SELECTION_OFFSET = {"x": 0, "y": 2200, "z": -1400}
 
 REPLAY_API_URL = "https://127.0.0.1:2999/replay"
-
-
-def print(*args, **kwargs):
-    prefix = rf"[highlights]\[highlights][/]:"
-    console.print(prefix, *args, **kwargs)
 
 
 class HighlightManager:
@@ -65,7 +53,9 @@ class HighlightManager:
 
     __current_match: PlayerMatch | None = None
 
-    def __init__(self, game_path: Path, cache_path: Path):
+    def __init__(self, game_path: Path, cache_path: Path, reporter: Optional[ProgressReporter] = None):
+        self.reporter = reporter or NullReporter()
+
         if not game_path.exists():
             raise FileNotFoundError("Invalid League of Legends game path")
 
@@ -115,8 +105,8 @@ class HighlightManager:
         self.__init_cfg()
 
     @classmethod
-    async def create(cls, name: str, tag: str, game_path: Path, cache_path: Path, api_key: str):
-        obj = cls(game_path, cache_path)
+    async def create(cls, name: str, tag: str, game_path: Path, cache_path: Path, api_key: str, reporter: Optional[ProgressReporter] = None):
+        obj = cls(game_path, cache_path, reporter)
         await obj.__init(name, tag, api_key)
         return obj
 
@@ -193,25 +183,25 @@ class HighlightManager:
         return analyzer.get_all_events()
 
     async def capture_highlights_for_match(self, matchID: str, numHighlights: int = 5):
-        print(f"Capturing {numHighlights} highlight(s) for match [highlights_match_id]{matchID}[/]")
+        self.reporter.message(f"Capturing {numHighlights} highlight(s) for match [highlights_match_id]{matchID}[/]")
 
-        with console.status("", spinner="simpleDotsScrolling", spinner_style="featherstorm") as status:
-            status.update("Fetching highlight events...")
+        with self.reporter.task():
+            self.reporter.step("Fetching highlight events...")
             events = await self.get_highlight_events(matchID)
             events.sort(key=lambda x: x.timestamp)  # sort by the start time
 
-            status.update("Fetching match data...")
+            self.reporter.step("Fetching match data...")
             match = await self.get_match(matchID)
             self.__current_match = match
 
-            status.update("Opening replay file...")
+            self.reporter.step("Opening replay file...")
             if not await self.open_replay(matchID):
                 return
             await self.wait_for_replay_ready()
         try:
             await self.record(events, numHighlights)
         except KeyboardInterrupt, asyncio.CancelledError:
-            print("[warning]Cancelled[/] - pausing replay and ending recording...")
+            self.reporter.message("[warning]Cancelled[/] - pausing replay and ending recording...")
             try:
                 await self.pause()
                 await self.stop_recording()
@@ -226,7 +216,7 @@ class HighlightManager:
                 if await func():
                     return
             except httpx.ConnectError:
-                print("Failed to connect to replay API")
+                self.reporter.message("Failed to connect to replay API")
                 pass
             await asyncio.sleep(LAUNCH_POLL_INTERVAL)
         raise TimeoutError("Waiting timeout")
@@ -257,7 +247,7 @@ class HighlightManager:
         try:
             await self.lcu.launch_replay(matchID)
         except LCUMissingReplayMetadataException:
-            print(f"[error]Unable to open replay for match {matchID}[/]")
+            self.reporter.message(f"[error]Unable to open replay for match {matchID}[/]")
             return False
 
         return True
@@ -385,24 +375,24 @@ class HighlightManager:
                 break
 
             idx = i + 1
-            print(f"Capturing highlight [highlights_match_id]{idx}[/]...")
+            self.reporter.message(f"Capturing highlight [highlights_match_id]{idx}[/]...")
 
             timestamp = batch.timestamp
 
-            with console.status("Recording...", spinner="dots2", spinner_style="featherstorm") as status:
+            with self.reporter.task("Recording..."):
                 start_time = max(0, timestamp - LEAD_BUFFER)
                 length = batch.event_length
                 end_time = timestamp + length + TRAIL_BUFFER
-                status.update("Seeking...")
+                self.reporter.step("Seeking...")
                 await self.seek_to(timestamp)
 
-                status.update("Buffering...")
+                self.reporter.step("Buffering...")
                 await self.wait_for_seek()
 
-                status.update("Tracking player...")
+                self.reporter.step("Tracking player...")
                 await self.track_player_with_camera()
 
-                status.update("Resuming playback...")
+                self.reporter.step("Resuming playback...")
                 await self.resume()
 
                 matchID = self.__current_match.matchId
@@ -411,45 +401,37 @@ class HighlightManager:
                 file_dir = self.cache_path / matchID
                 file_dir.mkdir(parents=True, exist_ok=True)
 
-                status.update("Configuring recording...")
+                self.reporter.step("Configuring recording...")
                 file_path = (file_dir / file_name).resolve()
                 await self.start_recording(file_path.as_posix(), start_time, end_time)
 
-                status.update("Recording...")
+                self.reporter.step("Recording...")
                 await self.wait_for_recording()
 
-            print(f"Captured highlight [highlights_match_id]{idx}[/]!")
+            self.reporter.message(f"Captured highlight [highlights_match_id]{idx}[/]!")
             raw_highlight_paths.append(file_path)
 
-        print(f"Done capturing highlights - exiting in {REALITY_CHECK_BUFFER} seconds...")
+        self.reporter.message(f"Done capturing highlights - exiting in {REALITY_CHECK_BUFFER} seconds...")
         await asyncio.sleep(REALITY_CHECK_BUFFER)
         await self.close_active_replay()
 
-        print(f"Converting & compressing {len(raw_highlight_paths)} highlights...")
+        self.reporter.message(f"Converting & compressing {len(raw_highlight_paths)} highlights...")
         await self.compress_many_highlights(raw_highlight_paths)
 
         return True
 
     async def compress_many_highlights(self, paths: list[Path]):
-        with Progress(
-            BarColumn(bar_width=None),
-            MofNCompleteColumn(),
-            TimeElapsedColumn(),
-            TextColumn("[featherstorm]Compressing highlights...[/]"),
-            console=console,
-            expand=True,
-        ) as progress:
-            overall = progress.add_task("", total=len(paths))
+        with self.reporter.task("Compressing highlights...", total=len(paths)):
 
             async def _track(path: Path):
                 result = await self.compress_highlight(path)
-                progress.update(overall, advance=1)
-                print(f"Highlight saved to {format_file_path(result)}")
+                self.reporter.advance()
+                self.reporter.message(f"Highlight saved to {format_file_path(result)}")
                 return result
 
             await asyncio.gather(*[_track(p) for p in paths])
 
-        print(":cherry_blossom: Done compressing highlights")
+        self.reporter.message(":cherry_blossom: Done compressing highlights")
 
     async def compress_highlight(self, file_path: Path) -> Path:
         dest = file_path.with_suffix(".mp4")

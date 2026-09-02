@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from dataclasses import dataclass
 
@@ -15,13 +16,15 @@ from govee import GoveeConnectionListener, GoveeColor
 
 from league import config
 from league.api import LeagueClient
-from league.console import log, print
 from league.watcher import MatchWatcher
 from league.discord import LeagueRichPresence
 from league.lcu.socket import LCUWebsocketEvent
 from league.lcu.gameflow import LCUGameFlow, LCUGameFlowEvent
-from league.models import GameEventType, GameTeam, GameEvent, GameResult, Turret
+from league.models import GameEventType, GameTeam, GameEvent
+from league.ui import output, RichProgressReporter
+from league.ui.renderers import EventFeedContext, format_event_line, FEED_EVENTS
 
+log = logging.getLogger(__name__)
 
 DATA_PATH = config.get("meta.cache_dir")
 
@@ -85,7 +88,7 @@ async def setup_chroma_effects(chroma: ChromaSession, device: ChromaDevice) -> E
 
 
 async def init_govee() -> GoveeConnectionListener:
-    log("Setting up [external_api]govee[/]...")
+    log.info("Setting up [external_api]govee[/]...")
     loop = asyncio.get_event_loop()
     govee_listener = GoveeConnectionListener(loop)
     govee_listener.start()
@@ -101,92 +104,14 @@ async def init_govee() -> GoveeConnectionListener:
     return govee_listener
 
 
-def format_assists(assisters, format_player) -> str:
-    if not assisters:
-        return ""
-    return ", assisted by: " + ", ".join(format_player(a) for a in assisters)
+def register_event_feed(watcher: MatchWatcher, feed: EventFeedContext):
+    def on_event(event: GameEvent):
+        line = format_event_line(event, feed)
+        if line:
+            output.print(line)
 
-
-def register_event_feed(watcher: MatchWatcher, format_player):
-    def print_event(event: GameEvent, message: str):
-        print(f"{event.get_formatted_timestamp()}: {message}")
-
-    def on_game_start(event: GameEvent):
-        print_event(event, "Game has started")
-
-    def on_minions_spawning(event: GameEvent):
-        print_event(event, "Minions have spawned")
-
-    def on_first_blood(event: GameEvent):
-        print_event(event, f"First blood claimed by {format_player(event.Recipient)}")
-
-    def on_first_brick(event: GameEvent):
-        print_event(event, f"First brick claimed by {format_player(event.KillerName)}")
-
-    def on_champion_kill(event: GameEvent):
-        killer = format_player(event.KillerName)
-        victim = format_player(event.VictimName)
-        msg = f"{killer} has slain {victim}" + format_assists(event.Assisters, format_player)
-        print_event(event, msg)
-
-    def on_turret_killed(event: GameEvent):
-        turret = Turret.from_str(event.TurretKilled)
-        killer = format_player(event.KillerName)
-        msg = f"{turret.to_str()} was destroyed by {killer}" + format_assists(event.Assisters, format_player)
-        print_event(event, msg)
-
-    def on_inhib_killed(event: GameEvent):
-        killer = format_player(event.KillerName)
-        msg = f"{event.InhibKilled} was destroyed by {killer}" + format_assists(event.Assisters, format_player)
-        print_event(event, msg)
-
-    def on_dragon_killed(event: GameEvent):
-        killer = format_player(event.KillerName)
-        verb = "stolen" if event.Stolen else "slain"
-        msg = f"The {event.DragonType} dragon was {verb} by {killer}" + format_assists(event.Assisters, format_player)
-        print_event(event, msg)
-
-    def on_herald_killed(event: GameEvent):
-        killer = format_player(event.KillerName)
-        verb = "stolen" if event.Stolen else "slain"
-        msg = f"The Rift Herald was {verb} by {killer}" + format_assists(event.Assisters, format_player)
-        print_event(event, msg)
-
-    def on_baron_killed(event: GameEvent):
-        killer = format_player(event.KillerName)
-        verb = "stolen" if event.Stolen else "slain"
-        msg = f"Baron Nashor was {verb} by {killer}" + format_assists(event.Assisters, format_player)
-        print_event(event, msg)
-
-    def on_horde_killed(event: GameEvent):
-        killer = format_player(event.KillerName)
-        verb = "stolen" if event.Stolen else "slain"
-        msg = f"A grub has been {verb} by {killer}" + format_assists(event.Assisters, format_player)
-        print_event(event, msg)
-
-    def on_multikill(event: GameEvent):
-        print_event(event, f"{event.get_killstreak_str()} for {format_player(event.KillerName)}")
-
-    def on_ace(event: GameEvent):
-        print_event(event, f"{format_player(event.Acer)} has scored an ace for {event.AcingTeam}")
-
-    def on_game_end(event: GameEvent):
-        print_event(event, f"You {'lose!' if event.Result == GameResult.Lose else 'win!'}")
-
-    watcher.on(GameEventType.GameStart, on_game_start)
-    watcher.on(GameEventType.MinionsSpawning, on_minions_spawning)
-    watcher.on(GameEventType.FirstBlood, on_first_blood)
-    watcher.on(GameEventType.FirstBrick, on_first_brick)
-    watcher.on(GameEventType.ChampionKill, on_champion_kill)
-    watcher.on(GameEventType.TurretKilled, on_turret_killed)
-    watcher.on(GameEventType.InhibKilled, on_inhib_killed)
-    watcher.on(GameEventType.DragonKill, on_dragon_killed)
-    watcher.on(GameEventType.HeraldKill, on_herald_killed)
-    watcher.on(GameEventType.BaronKill, on_baron_killed)
-    watcher.on(GameEventType.HordeKill, on_horde_killed)
-    watcher.on(GameEventType.Multikill, on_multikill)
-    watcher.on(GameEventType.Ace, on_ace)
-    watcher.on(GameEventType.GameEnd, on_game_end)
+    for event_type in FEED_EVENTS:
+        watcher.on(event_type, on_event)
 
 
 async def register_gameflow_events(gameflow: LCUGameFlow, presence: LeagueRichPresence | None):
@@ -224,7 +149,7 @@ async def run_companion():
     presence = None
     enable_discord = config.get_or_set("discord.enable_rich_presence", default=True)
 
-    log("Starting [featherstorm]Featherstorm[/] in companion mode...")
+    log.info("Starting [featherstorm]Featherstorm[/] in companion mode...")
 
     if enable_govee:
         govee = await init_govee()
@@ -246,25 +171,16 @@ async def run_companion():
 
         active_player_name = None
         active_player_team = None
-        player_teams: dict[str, GameTeam] = {}
-        player_champions: dict[str, str] = {}
 
-        def format_player(name: str) -> str:
-            team = player_teams.get(name)
-            champion = player_champions.get(name)
-            display = f"{name} [bold white]({champion})[/bold white]" if champion else name
-            if team == GameTeam.ORDER:
-                return f"[bold blue]{display}[/bold blue]"
-            elif team == GameTeam.CHAOS:
-                return f"[bold red]{display}[/bold red]"
-            else:
-                return display
+        feed = EventFeedContext()
+        player_teams = feed.teams
+        player_champions = feed.champions
 
         team_to_chroma_effect = {GameTeam.ORDER: effects.blue, GameTeam.CHAOS: effects.red, GameTeam.SPECTATOR: effects.white}
 
         team_to_govee_color = {GameTeam.ORDER: GoveeColor.blue(), GameTeam.CHAOS: GoveeColor.red(), GameTeam.SPECTATOR: GoveeColor.white()}
 
-        watcher = MatchWatcher(client)
+        watcher = MatchWatcher(client, reporter=RichProgressReporter())
 
         async def on_game_start(_: GameEvent):
             nonlocal active_player_name, active_player_team
@@ -332,14 +248,13 @@ async def run_companion():
             client.reset()
             active_player_name = None
             active_player_team = None
-            player_teams.clear()
-            player_champions.clear()
+            feed.clear()
 
-            log("League session started")
+            log.info("League session started")
 
         @watcher.on_session_end
         async def on_session_end():
-            log("League session ended.")
+            log.info("League session ended.")
 
         watcher.on(GameEventType.GameStart, on_game_start)
         watcher.on(GameEventType.GameEnd, on_game_end)
@@ -351,7 +266,7 @@ async def run_companion():
         watcher.on(GameEventType.BaronKill, on_objective_kill)
         watcher.on(GameEventType.DragonKill, on_objective_kill)
 
-        register_event_feed(watcher, format_player)
+        register_event_feed(watcher, feed)
 
         try:
             await watcher.run()
