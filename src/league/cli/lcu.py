@@ -172,17 +172,16 @@ def lcu_inventory_item_asset(endpoint: str, client_install_path: Optional[Path] 
     out.write_bytes(data.content)
 
 
-@inventory_app.command(name="tiles", help="Fetch skin tiles for a champion")
-def lcu_fetch_tiles(champion_name: str, output_dir: Path | None = None, client_install_path: Optional[Path] = default_client_path):
+@inventory_app.command(name="tiles", help="Fetch skin tiles for all champions, or a specific one")
+def lcu_fetch_tiles(champion_name: str | None = None, output_dir: Path | None = None, client_install_path: Optional[Path] = default_client_path):
     client = LCUClient(client_install_path=client_install_path)
     dragon = DataDragon()
 
     if output_dir is None:
         output_dir = Path.cwd()
 
-    async def run():
-        await dragon.initialize()
-        champion_id = await dragon.get_champion_id(champion_name)
+    async def fetch_tiles_for_champion(champion_name: str, champion_id: int, inventory: dict):
+        output.print(f"Fetching tiles for {champion_name}...")
         dir = output_dir / champion_name.lower()
         dir.mkdir(parents=True, exist_ok=True)
 
@@ -197,19 +196,40 @@ def lcu_fetch_tiles(champion_name: str, output_dir: Path | None = None, client_i
             skin_ids.append(skin_id)
 
         endpoints = []
-        inventory = await client.get_inventory()
         for item in inventory.values():
             id = item.get("id")
-            if (id is not None) and (id in skin_ids):
-                endpoints.append((id, item.get("tilePath")))
+            item_type = item.get("gipInventoryType")
+            if (id is not None) and (id in skin_ids) and item_type == "CHAMPION_SKIN":
+                tile_path = item.get("tilePath")
+                if tile_path is None:
+                    continue
+                endpoints.append((id, tile_path))
 
         for id, endpoint in endpoints:
             better_id = id % 1000
-            output.print(f"Fetching tile for skin {better_id}...")
 
             data = await client.get_asset(endpoint)
-            out = dir / f"{champion_name.lower()}_{better_id}.jpg"
+            if data is None:
+                output.error(f"Failed to fetch skin tile for {champion_name}, id={id}, better_id={better_id}")
+                return
+
+            out = dir / f"{better_id}.jpg"
             out.write_bytes(data.content)
+
+    async def run():
+        await dragon.initialize()
+        inventory = await client.get_inventory()
+
+        if champion_name is None:
+            output.print("Fetching skin tiles for all champions...")
+            champion_lookup = await dragon._get_champion_lookup()
+            by_name = champion_lookup.get("by-name")
+            tasks = [fetch_tiles_for_champion(name, id, inventory) for name, id in by_name.items()]
+            await asyncio.gather(*tasks)
+        else:
+            output.print(f"Fetching skin tiles for {champion_name}...")
+            champion_id = await dragon.get_champion_id(champion_name)
+            await fetch_tiles_for_champion(champion_name, champion_id, inventory)
 
     asyncio.run(run())
 

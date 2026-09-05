@@ -8,14 +8,15 @@ from typing import Callable
 from league.enums import Queue
 from league.dragon import DataDragon
 from league.riot_api import RiotAPIClient
+from league.enums.queues import QUEUE_DESCRIPTION
 from league.lcu.gameflow import LCUGameFlow, LCUGameflowPhase
-from league.enums.queues import QUEUE_DESCRIPTION, QUEUE_MAP
 from league.models import AllGameData, Scores, GameTeam, CurrentGameInfo
 from league.discord import DiscordRichPresence, DiscordActivity, ActivityType
 
 MAX_PARTY_SIZE = 5
 UPDATE_INTERVAL = 15.0
 
+ASSETS_BASE_URL = "https://ghst.tools/media/featherstorm/assets"
 
 class SessionStatus(Enum):
     Empty = 1
@@ -134,14 +135,14 @@ class LeagueRichPresence:
         if opponent is not None:
             details += f" vs. {opponent}"
 
-        large_image = await self.get_image_key_for_skin(champion, skin_id)
+        large_image = await self.get_image_url_for_skin(champion, skin_id)
         large_text = active_player.skinName
 
         position = self.get_player_position(game_data)
         if position == "UTILITY":
             position = "SUPPORT"
 
-        small_image = self.get_image_key_for_position(position)
+        small_image = self.get_image_url_for_position(position)
         small_text = position.title()
 
         name = "League of Legends"
@@ -263,6 +264,23 @@ class LeagueRichPresence:
 
     def get_image_key_for_position(self, position: str) -> str:
         return f"role_{position.lower()}"
+
+    def format_tile_url(self, champion_name: str, skin_id: int):
+        return f"{ASSETS_BASE_URL}/tiles/{champion_name.lower()}/{skin_id}.jpg"
+
+    async def get_image_url_for_skin(self, champion_name: str, skin_id: int) -> str:
+        skins = await self.dragon.get_champion_skins(champion_name)
+        for skin in skins:
+            bad_id = int(skin.get("id"))
+            if (bad_id % 1000) == skin_id:
+                parent_skin = skin.get("parentSkin")
+                if parent_skin is not None:
+                    return self.format_tile_url(champion_name.lower(), parent_skin)
+
+        return self.format_tile_url(champion_name.lower(), skin_id)
+
+    def get_image_url_for_position(self, position: str) -> str:
+            return f"{ASSETS_BASE_URL}/roles/{position.lower()}.png"
 
     def get_game_mode_string(self, game_data: AllGameData) -> str:
         game_mode = game_data.gameData.gameMode
