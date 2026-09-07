@@ -102,7 +102,9 @@ league-of-snakes/
 
 Primary (CLI, recommended):
 ```bash
-uv run featherstorm companion          # Govee via companion.govee_enabled, Discord presence via discord.enable_rich_presence
+uv run featherstorm companion [--no-govee] [--no-discord] [--no-chroma]
+                                       # Govee via companion.govee_enabled, Discord presence via discord.enable_rich_presence
+                                       # --no-* flags force a feature off for that run (they can't force one on)
 uv run featherstorm riot matches ["Name"] ["TAG"] [--count N] [--match-type ranked|normal|tourney|tutorial]
 uv run featherstorm riot match <match_id>
 uv run featherstorm riot timeline <match_id>
@@ -358,7 +360,8 @@ Other methods:
 - `chroma` dep is local path ref (`../rzr-chroma`); both repos must be disk siblings. Source at `../rzr-chroma/src/chroma`.
 - `govee` dep is local path ref (`../govee`); must also be disk sibling. Source at `../govee/src/govee`.
 - Live Client API only available during active game. `MatchWatcher` polls every `companion.wait_interval` (2s default) until connected, then every `companion.poll_interval` (0.25s default). No manual restart between games.
-- Govee toggled via `companion.govee_enabled` config key (default `False`), not a CLI flag.
+- Govee toggled via `companion.govee_enabled` config key (default `False`). `--no-govee` / `--no-discord` / `--no-chroma` on `featherstorm companion` only *disable* — Govee/Discord still need their config key enabled to turn on.
+- `--no-chroma` skips the `ChromaSession` entirely (`chroma` is `None`, `effects` is `None`); all flash calls go through the `flash(effect_name)` helper in `run_companion()`, which no-ops when `effects is None`.
 - `riot-root-cert.pem` renamed to `riotgames.pem` but no longer used — `LeagueClient` uses `verify=False`.
 - pypresence `AioPresence.close()` is sync and calls `loop.close()` on the running event loop — never call it. `DiscordRichPresence.close()` ([league/discord/presence.py](src/league/discord/presence.py)) closes the IPC pipe transport directly instead. `run_companion()` closes presence in a `finally` so Ctrl+C doesn't leave an unclosed proactor pipe transport (`ValueError: I/O operation on closed pipe` warning at exit).
 - Spectator mode: `/activeplayer` returns `{"error": "..."}` with HTTP 200 (not 4xx). Both `get_active_player()` and `AllGameData.__post_init__` guard against this, returning `None` for `activePlayer`.

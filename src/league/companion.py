@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import contextlib
 
 from dataclasses import dataclass
 
@@ -139,15 +140,15 @@ async def register_gameflow_events(gameflow: LCUGameFlow, presence: LeagueRichPr
     await gameflow.start()
 
 
-async def run_companion():
+async def run_companion(*, enable_govee: bool = True, enable_discord: bool = True, enable_chroma: bool = True):
     client = LeagueClient()
     gameflow = LCUGameFlow()
 
     govee = None
-    enable_govee = config.get_or_set("companion.govee_enabled", default=False)
+    enable_govee = enable_govee and config.get_or_set("companion.govee_enabled", default=False)
 
     presence = None
-    enable_discord = config.get_or_set("discord.enable_rich_presence", default=True)
+    enable_discord = enable_discord and config.get_or_set("discord.enable_rich_presence", default=True)
 
     log.info("Starting [featherstorm]Featherstorm[/] in companion mode...")
 
@@ -165,12 +166,18 @@ async def run_companion():
     async def get_game_data():
         return await client.get_all_game_data()
 
-    async with ChromaSession(CHROMA_APP_INFO) as chroma:
+    async with contextlib.AsyncExitStack() as stack:
+        chroma = await stack.enter_async_context(ChromaSession(CHROMA_APP_INFO)) if enable_chroma else None
         device = ChromaDevice.Keyboard
-        effects = await setup_chroma_effects(chroma, device)
+        effects = await setup_chroma_effects(chroma, device) if chroma else None
 
         active_player_name = None
         active_player_team = None
+
+        def flash(effect_name: str):
+            if effects is None:
+                return
+            asyncio.create_task(chroma.play_animation(getattr(effects, effect_name)[active_player_team], device))
 
         feed = EventFeedContext()
         player_teams = feed.teams
@@ -203,8 +210,9 @@ async def run_companion():
 
             active_player_team = player_team
 
-            effect = team_to_chroma_effect.get(player_team)
-            await chroma.set_effect(effect)
+            if effects is not None:
+                effect = team_to_chroma_effect.get(player_team)
+                await chroma.set_effect(effect)
 
             if govee:
                 # don't forget about govee!
@@ -222,25 +230,25 @@ async def run_companion():
         async def on_champion_kill(event: GameEvent):
             killer = event.KillerName
             if killer == active_player_name:
-                asyncio.create_task(chroma.play_animation(effects.kill_flash[active_player_team], device))
+                flash("kill_flash")
             elif player_teams.get(killer) == active_player_team:
-                asyncio.create_task(chroma.play_animation(effects.teammate_kill_flash[active_player_team], device))
+                flash("teammate_kill_flash")
 
         async def on_turret_killed(event: GameEvent):
             killer = event.KillerName
             if killer == active_player_name:
-                asyncio.create_task(chroma.play_animation(effects.turret_flash[active_player_team], device))
+                flash("turret_flash")
             elif player_teams.get(killer) == active_player_team:
-                asyncio.create_task(chroma.play_animation(effects.teammate_turret_flash[active_player_team], device))
+                flash("teammate_turret_flash")
 
         async def on_first_brick(event: GameEvent):
             if event.KillerName == active_player_name:
-                asyncio.create_task(chroma.play_animation(effects.first_brick_flash[active_player_team], device))
+                flash("first_brick_flash")
 
         async def on_objective_kill(event: GameEvent):
             killer = event.KillerName
             if player_teams.get(killer) == active_player_team:
-                asyncio.create_task(chroma.play_animation(effects.objective_flash[active_player_team], device))
+                flash("objective_flash")
 
         @watcher.on_session_start
         async def on_session_start():

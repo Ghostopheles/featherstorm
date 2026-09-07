@@ -17,8 +17,12 @@ def app_main():
 
 
 @app.command(name="companion", help="Runs Featherstorm in 'companion' mode alongside your current match.")
-def companion():
-    asyncio.run(run_companion())
+def companion(
+    govee: bool = typer.Option(True, "--govee/--no-govee", help="Enable Govee smart light control."),
+    discord: bool = typer.Option(True, "--discord/--no-discord", help="Enable Discord Rich Presence."),
+    chroma: bool = typer.Option(True, "--chroma/--no-chroma", help="Enable Razer Chroma lighting."),
+):
+    asyncio.run(run_companion(enable_govee=govee, enable_discord=discord, enable_chroma=chroma))
 
 
 app.add_typer(lcu.app)
