@@ -19,6 +19,7 @@ DEFAULT_CONFIG = {
         "default_player_name": "Dallas N Tollway",
         "default_player_tagline": "uwu",
         "govee_enabled": False,
+        "chroma_enabled": False,
         "wait_interval": 2.0,
         "poll_interval": 0.25,
         "max_reconnect_attempts": 5,
