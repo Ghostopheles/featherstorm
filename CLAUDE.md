@@ -41,6 +41,10 @@ league-of-snakes/
 │   ├── timeline.py       # MatchTimelineAnalyzer, HighlightEvent, ParticipantPositionTrack (Riot API match timeline → highlights) — analysis only, no rendering
 │   ├── highlights.py     # HighlightManager (replay download, open replay client, OBS-style recording of clip ranges)
 │   ├── watcher.py        # MatchWatcher (session lifecycle, reconnect logic, event routing)
+│   ├── crawler/          # Match-ID crawler (SurrealDB-backed BFS over the summoner↔match graph)
+│   │   ├── __init__.py   # re-exports CrawlerDatabase, MatchCrawler, CrawlConfig, CrawlStats
+│   │   ├── database.py   # CrawlerDatabase (schema, dedupe, frontier claim/complete), Node, CrawlStats
+│   │   └── match_crawler.py # MatchCrawler + CrawlConfig — the BFS crawl loop
 │   ├── cli/              # Typer CLI package — primary entry point (featherstorm)
 │   │   ├── __init__.py   # runs config.init(), re-exports `app` (keeps league.cli:app entry point)
 │   │   ├── main.py       # root app: callback + `companion` command, add_typer each group
@@ -49,6 +53,7 @@ league-of-snakes/
 │   │   ├── cfg.py        # cfg_app
 │   │   ├── riot.py       # riot_app (matches, match, timeline, puuid, ranked, live-game)
 │   │   ├── highlights.py # highlights_app
+│   │   ├── crawler.py    # crawler_app (crawl, stats, export, schema, reset)
 │   │   └── dragon.py     # dragon_app (item, champion, art)
 │   ├── ui/               # Terminal rendering layer — the only place that writes to the console
 │   │   ├── __init__.py   # public surface (output, console, setup_logging, render, RichProgressReporter, MatchRow)
@@ -64,6 +69,7 @@ league-of-snakes/
 │   │       ├── ladder.py   # ranked_ladder_table(), format_ladder_name()
 │   │       ├── items.py    # item_panel() (DDragon pseudo-HTML → markup)
 │   │       ├── timeline.py # player_timeline_panel()
+│   │       ├── crawler.py  # crawl_stats_table()
 │   │       └── events.py   # EventFeedContext, describe_event(), format_event_line(), FEED_EVENTS
 │   ├── bladecaller/      # PySide6 desktop UI (Dashboard, Match History, Settings) — see src/league/bladecaller/CLAUDE.md
 │   ├── discord/
@@ -95,6 +101,7 @@ league-of-snakes/
 - **websockets** — LCU websocket client (`lcu/socket.py`)
 - **pillow** — image handling (skin tiles/art)
 - **pynput** — input simulation (highlights recording)
+- **surrealdb** — crawler store (SurrealDB 2.x SDK, HTTP connection; server runs via `docker-compose.yml`)
 - **pyside6** — desktop UI (optional `ui` extra; `bladecaller` gui-script)
 - **qasync** — unifies the Qt and asyncio event loops in the UI (optional `ui` extra)
 
@@ -113,6 +120,12 @@ uv run featherstorm riot puuid ["Name"] ["TAG"]
 uv run featherstorm riot ranked <solo|tft|flex> <tier> <division>
 uv run featherstorm riot live-game ["Name"] ["TAG"]   # currently ongoing match (SPECTATOR-V5)
 uv run featherstorm highlights capture [--game-path P] [--export-path P] [--name N] [--tagline T] [--count N]
+uv run featherstorm crawler crawl [--count N] [--days N | --since YYYY-MM-DD --until YYYY-MM-DD | --all-time]
+                                  [--queue ...] [--match-type ...] [--max-depth N] [--reset]
+uv run featherstorm crawler stats
+uv run featherstorm crawler export [--out PATH] [--limit N] [--state expanded]
+uv run featherstorm crawler schema
+uv run featherstorm crawler reset [--force]
 uv run featherstorm dragon item <item_id>
 uv run featherstorm dragon champion <champion_id>
 uv run featherstorm dragon art <champion_name> [--skin N] [--asset-type splash|...] [--output-path P]
@@ -153,6 +166,9 @@ Categories and keys:
 - `highlights.export_multipass` (default `'fullres'`) — multipass encoding mode
 - `highlights.export_audio_quality` (default `'192k'`) — audio bitrate
 - `meta.cache_dir` — cache directory for Data Dragon and other metadata
+- `crawler.db_url` (default `http://localhost:16800`), `crawler.namespace` (`featherstorm`), `crawler.database` (`crawler`), `crawler.username` / `crawler.password` (`root`/`root`) — SurrealDB connection
+- `crawler.default_window_days` (default `14`) — time window when `--days`/`--since`/`--all-time` are not passed
+- `crawler.history_page_size` (default `100`, the MATCH-V5 max), `crawler.summoner_workers` (default `8`), `crawler.match_workers` (default `4`), `crawler.claim_batch` (default `8`), `crawler.frontier_low_water` (default `32`)
 - `bladecaller.status_poll_interval` (default `3.0`s) — how often the UI sidebar indicator polls the LCU gameflow phase
 - `bladecaller.match_history_page_size` (default `20`) — matches fetched per "Load more" on the Match History page
 - `bladecaller.dashboard_recent_matches` (default `5`) — rows shown in the dashboard's Recent Matches card
@@ -207,6 +223,29 @@ LeagueRichPresence (discord/league_presence.py, if enable_rich_presence)
         └── 15s update loop: KDA/CS state line while in game
 ```
 
+### Crawler Data Flow
+
+Separate from the companion pipeline — offline, Riot Web API only, no League client needed.
+
+```
+seed Riot ID ──> get_puuid ──> summoner frontier (SurrealDB)
+                                      │
+        ┌─────────────────────────────┴──────────────────────────────┐
+        ▼                                                            ▼
+ summoner workers (x8)                                    match workers (x4, gated)
+ claim_summoners()                                        claim_matches()
+   └─ MATCH-V5 by-puuid/ids (windowed)                      └─ MATCH-V5 matches/{id}
+        ~20 ids per call at 14 days                              metadata.participants → 10 puuids
+   └─ complete_summoner() ──> match frontier              └─ complete_match() ──> summoner frontier
+
+stop when total matches >= target, or both frontiers empty (CrawlerExhausted)
+```
+
+Match workers only run when the summoner frontier is below `frontier_low_water`: a summoner expansion
+yields many more IDs per request than a match expansion, so match fetches exist purely to refill the
+summoner side. Widening the window makes each summoner fetch cheaper per ID; narrowing it makes the crawl
+more request-hungry (a 14-day window returns ~20 IDs per summoner, not the full 100-ID page).
+
 ### Key Classes
 
 - **`LeagueClient`** ([league/api.py](league/api.py)) — polls League Live Client API; `on_event()` builds a `GameEvent`, appends to `_history`, and dispatches to callbacks registered via `on(event_type, cb)`. No built-in per-event handlers (lighting + console feed live in companion). Tracks `last_event_count` for new events only — **`reset()` (clears `last_event_count` and `_history`) must be called at the start of every session**, or the next match dispatches nothing until its event count passes the previous one's.
@@ -241,6 +280,14 @@ LeagueRichPresence (discord/league_presence.py, if enable_rich_presence)
   - Helpers: `get_phase()`, `get_lobby()`, `get_game_data()`, `get_active_player()`, `get_active_player_team()`, `is_in_game()`, `emit_current_phase()` (fires `PhaseChanged` for the phase the client is *already* in — the websocket only pushes transitions), `close()`.
   - Async callbacks are dispatched as tasks (tracked in `_tasks`, cancelled by `close()`) so a slow handler can't stall the poll loop — they run concurrently, not serialized; sync callbacks still run inline.
   - `close()` is idempotent, disconnects the websocket (the bridge always starts it in `run()`) and `aclose()`s the httpx clients — but only closes `bridge.lcu` when the bridge created it, so an *injected* client outlives the bridge. `run()` calls `close()` in a `finally`.
+- **`CrawlerDatabase`** ([league/crawler/database.py](src/league/crawler/database.py)) — SurrealDB store for the match crawler. Two tables driven by one state machine (`discovered → claimed → expanded | failed`): `summoner` (record id = puuid) and `match` (record id = match id). Async context manager; `connect()` signs in, selects ns/db and applies the schema idempotently (`DEFINE ... IF NOT EXISTS`).
+  - Dedupe primitive: `add_summoners()` / `add_matches()` run `INSERT ... ON DUPLICATE KEY UPDATE seen_count += 1` and return **how many were new**. An already-`expanded` record keeps its state and depth — re-seeing a node costs one bumped counter, never a re-fetch.
+  - Frontier: `claim_summoners()` / `claim_matches()` atomically select-and-mark a batch in one query, so a killed run is recoverable; `release_stale_claims()` (called at the start of every crawl) returns abandoned `claimed` rows to `discovered`.
+  - Completion: `complete_summoner()` / `complete_match()` mark the node expanded, insert everything it discovered, and write the participant links in a single round trip, returning the new-node count. `fail_*(permanent=)` parks a node in `failed` or returns it for retry.
+  - `match.participants` is an `array<record<summoner>>` with an array index — one write per match instead of ten edge records. `summoner->played->match` edges are deliberately deferred until per-participant stats exist to hang on them.
+  - Every query goes through `_run()`, which retries `TransactionConflict` with jittered backoff — see Known Quirks.
+- **`MatchCrawler`** ([league/crawler/match_crawler.py](src/league/crawler/match_crawler.py)) — BFS over the summoner↔match graph until `CrawlConfig.target_matches` distinct match IDs are held. Two worker pools in one `asyncio.TaskGroup`: summoner workers expand match histories, match workers extract the 10 puuids from `metadata.participants`. Match expansion is **demand-driven** — gated on the summoner frontier dropping below `frontier_low_water` — because one summoner expansion yields far more IDs than one match expansion. Raises `CrawlerExhausted` (caught, reported as `status="exhausted"`) when both frontiers empty before the target.
+- **`CrawlConfig`** ([league/crawler/match_crawler.py](src/league/crawler/match_crawler.py)) — frozen config. `resolved()` freezes the time window to an absolute `start_time` **once**, so a long or resumed run can't slide its own window.
 - **`MatchTimelineAnalyzer`** ([league/timeline.py](src/league/timeline.py)) — analyzes Riot API `MatchTimeline` for highlight events using composable `Predicate` rules. `get_highlight_events()` → `list[HighlightEvent]`. `ParticipantPositionTrack` provides linear-interpolated position at any timestamp.
 - **`Predicate[T]`** ([league/predicates.py](src/league/predicates.py)) — composable boolean predicate wrapping a `T → bool` function. Supports `&`, `|`, `~` operators. `@rule` decorator registers named factories. `load_rule_from_config(path)` / `load_rule_from_dict(config)` build predicates from JSON config.
 - **`Output`** ([league/ui/output.py](src/league/ui/output.py)) — the console facade; module-level instance `output`. `print()` (routes through `render()`), `json()`, `rule()`, `info/success/warning/error()`, `prompt()`, `status(msg)` (project spinner baked in), `progress(*columns)`. Every CLI command writes through this.
@@ -341,6 +388,8 @@ uv run featherstorm lcu gameflow session
 
 `RiotAPIClient` — reads `RIOT_API_KEY` from `.env` (via `python-dotenv`). Route logic in `get_region_for_url()`: `/riot/*` and `match/v5` → `americas`, `/lol/*` → `na1`.
 
+`RiotAPIClient(api_key, limiter=None)` — pass a `RiotRateLimiter` and every `get()` waits for capacity, feeds response headers back into the limiter, and retries 429s honouring `Retry-After`. With `limiter=None` (the default, used by companion/bladecaller/all other CLI commands) behaviour is exactly as before. The crawler is the only caller that installs one.
+
 MATCH-V5 methods:
 - `get_match_ids(puuid, *, count, start, match_type, queue, start_time, end_time)` → `list[str]`
 - `get_match(match_id)` → `Match`
@@ -400,3 +449,10 @@ Other methods:
 - Queue type for presence can't come from Live Client API — `try_update_queue_type()` fetches it from Riot SPECTATOR-V5 (`gameQueueConfigId`), needs `RIOT_API_KEY`, only sets once per match.
 - `Queue` enum has duplicate historic names suffixed `_2`/`_3`; live IDs usually highest suffix (ARAM = `Q_5V5_ARAM_GAMES_3` = 450).
 - op.gg button on Discord presence disabled (commented out in `init_match()`).
+- **SurrealDB record IDs must be built with `RecordID(table, key)`**, never string-interpolated. puuids can start with a digit (`03c57e4e-…`) and Riot IDs contain `#`, both of which break bare `summoner:{key}` syntax. `RecordID` escapes them for you.
+- **SurrealDB parse/validation errors arrive as a top-level `error` key with no per-statement `result` list at all.** Checking only each statement's `status == "ERR"` silently reads a failed query as "zero statements ran" and returns an empty list. `CrawlerDatabase._run_once()` checks both.
+- `ORDER BY <field>` requires that field to be in the SELECT projection — Surreal raises `Missing order idiom` otherwise. The frontier claim selects `discovered_at` purely to order by it.
+- The rocksdb backend uses **optimistic** transactions, so concurrent read-then-update claims collide constantly with `Transaction conflict: Resource busy`. `CrawlerDatabase._run()` retries these with jittered exponential backoff (`MAX_CONFLICT_RETRIES`); it is expected traffic, not an error.
+- `AsyncSurreal("http://...")` returns the HTTP connection, whose `close()` raises `NotImplementedError` (it is stateless). `CrawlerDatabase.close()` swallows that.
+- The SDK's `query()` returns only the **first** statement's result. `CrawlerDatabase` uses `query_raw()` and reads the last statement instead, so multi-statement claim/complete queries work.
+- `LookupEnum.from_name()` / `LookupStrEnum.from_name()` compare against `member.name.upper()`. They previously did `cls[name.upper()]`, which failed for every mixed-case member (`MatchType.Ranked`) — `featherstorm riot matches --match-type ranked` raised `KeyError`.

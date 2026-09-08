@@ -50,6 +50,8 @@ class RiotRateLimiter:
         # window_seconds -> (limit, reset_at_monotonic, count)
         self._windows: dict[int, tuple[int, float, int]] = {}
         self._lock = asyncio.Lock()
+        # requests handed out by acquire() whose response headers haven't landed yet
+        self._pending = 0
 
     def update(self, headers: httpx.Headers) -> None:
         limit_h = headers.get("X-App-Rate-Limit")
@@ -80,6 +82,7 @@ class RiotRateLimiter:
         return out
 
     async def acquire(self) -> None:
+        """Reserve one request slot. Every acquire() must be paired with a release()."""
         async with self._lock:
             while True:
                 now = time.monotonic()
@@ -87,8 +90,15 @@ class RiotRateLimiter:
                 for window, (limit, reset_at, count) in self._windows.items():
                     if now >= reset_at:
                         continue  # window expired, count is stale
-                    if count >= limit:
+                    # counts only rise when a response lands, so in-flight requests have to
+                    # be counted here or concurrent callers all pass the check and overshoot
+                    if count + self._pending >= limit:
                         wait = max(wait, reset_at - now)
                 if wait <= 0:
+                    self._pending += 1
                     return
                 await asyncio.sleep(wait)
+
+    def release(self) -> None:
+        """Drop a reservation once the request has settled, whatever the outcome."""
+        self._pending = max(0, self._pending - 1)

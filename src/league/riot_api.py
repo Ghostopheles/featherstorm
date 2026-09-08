@@ -1,15 +1,20 @@
+import json
 import httpx
 import asyncio
+import logging
 
 from pathlib import Path
 from typing import Optional, Any, override
 
 import league.config as cfg
 
+from league.markup import format_url
 from league.cache import DataCache
 from league.http import BaseAPIClient, RiotRateLimiter
 from league.enums import MatchType, Queue, RankedQueueType, RankedTier, RankedDivision
 from league.models import Match, MatchTimeline, PlayerMatch, LeagueEntry, RiotAccount, CurrentGameInfo
+
+log = logging.getLogger(__name__)
 
 LANGUAGE = "en_US"
 RIOT_REGION = "americas"
@@ -31,17 +36,56 @@ class RiotAPIClient(BaseAPIClient):
     _cache_init: bool = False
     _account_cache: DataCache | None = None
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, limiter: Optional[RiotRateLimiter] = None):
         headers = {"X-Riot-Token": api_key, "Content-Type": "application/json"}
 
         self.client = httpx.AsyncClient(http2=True, headers=headers)
+        self.limiter = limiter
         self._cache_init = False
 
     @override
-    async def get(self, endpoint, *args, **kwargs):
+    async def get(self, endpoint, *args, _limiter: Optional[RiotRateLimiter] = None, **kwargs):
         region = get_region_for_url(endpoint)
         url = RIOT_API_BASE_URL.format(region=region) + endpoint
-        return await super().get(url, *args, **kwargs)
+        limiter = _limiter or self.limiter
+        if limiter is None:
+            return await super().get(url, *args, **kwargs)
+        return await self._get_limited(url, limiter, *args, **kwargs)
+
+    async def _get_limited(self, url: str, limiter: RiotRateLimiter, *args, _return_exception: bool = False, no_json: bool = False, **kwargs):
+        """get() through the rate limiter: wait for capacity, feed the response headers back, retry 429s."""
+        while True:
+            await limiter.acquire()
+            try:
+                # errors are suppressed here because a 429 is normal traffic on this path —
+                # the retry below handles it, and the base logger would cry wolf about it
+                res = await super().get(url, *args, no_json=True, _return_exception=True, _suppress_exception=True, **kwargs)
+            finally:
+                limiter.release()
+
+            if isinstance(res, httpx.HTTPStatusError):
+                # 429s carry the freshest window data, so update before deciding what to do
+                limiter.update(res.response.headers)
+                if res.response.status_code == 429:
+                    retry_after = float(res.response.headers.get("Retry-After", "1"))
+                    log.warning(f"Rate limited, retrying in {retry_after:.0f}s")
+                    await asyncio.sleep(retry_after)
+                    continue
+                log.error(f"[error]HTTP Status Error ({res.response.status_code}) from {format_url(str(res.request.url))}[/]: {res}")
+                return res if _return_exception else None
+            if isinstance(res, Exception):
+                log.error(f"[error]HTTP Request Error ({type(res).__name__})[/]: {res}")
+                return res if _return_exception else None
+            if res is None:
+                return None
+
+            limiter.update(res.headers)
+            if no_json:
+                return res
+            try:
+                return res.json()
+            except json.decoder.JSONDecodeError:
+                return None
 
     async def _init_account_cache(self):
         if self._cache_init:
@@ -75,12 +119,10 @@ class RiotAPIClient(BaseAPIClient):
     async def get_many_accounts(self, puuids: list[str]) -> list[RiotAccount]:
         await self._init_account_cache()
 
-        limiter = RiotRateLimiter()
+        limiter = self.limiter or RiotRateLimiter()
         sem = asyncio.Semaphore(20)
 
         endpoint = "/riot/account/v1/accounts/by-puuid/{puuid}"
-        region = get_region_for_url(endpoint)
-        base_url = RIOT_API_BASE_URL.format(region=region)
 
         cache = self._account_cache.read()
         if cache is None:
@@ -89,31 +131,18 @@ class RiotAPIClient(BaseAPIClient):
         async def fetch(puuid: str):
             if data := cache.get(puuid):
                 return data
-
             async with sem:
-                while True:
-                    await limiter.acquire()
-                    url = base_url + endpoint.format(puuid=puuid)
-                    res = await self.client.get(url)
-                    limiter.update(res.headers)
-
-                    if res.status_code == 429:
-                        retry_after = float(res.headers.get("Retry-After", "1"))
-                        await asyncio.sleep(retry_after)
-                        continue
-
-                    res.raise_for_status()
-
-                    data = res.json()
-                    return data
+                return await self.get(endpoint.format(puuid=puuid), _limiter=limiter)
 
         data = await asyncio.gather(*(fetch(id) for id in puuids))
         accounts = []
         for entry in data:
+            if entry is None:
+                continue
             cache[entry.get("puuid")] = entry
             accounts.append(RiotAccount(**entry))
 
-        self._account_cache.write(data)
+        self._account_cache.write(cache)
         return accounts
 
     async def get_puuid(self, game_name: str, tag_line: str) -> str | None:
@@ -142,6 +171,7 @@ class RiotAPIClient(BaseAPIClient):
         queue_type: Optional[Queue] = None,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
+        _return_exception: bool = False,
     ) -> list[str]:
         params = {"count": count, "start": start}
         if match_type is not None:
@@ -152,7 +182,7 @@ class RiotAPIClient(BaseAPIClient):
             params["startTime"] = start_time
         if end_time is not None:
             params["endTime"] = end_time
-        return await self.get(f"/lol/match/v5/matches/by-puuid/{puuid}/ids", params=params)
+        return await self.get(f"/lol/match/v5/matches/by-puuid/{puuid}/ids", params=params, _return_exception=_return_exception)
 
     async def get_match(self, match_id: str) -> Match:
         # surface the transport error instead of feeding None to pydantic — callers

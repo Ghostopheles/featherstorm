@@ -1,5 +1,5 @@
 from typing import Protocol, Iterator, Optional
-from contextlib import contextmanager
+from contextlib import contextmanager, AbstractContextManager
 
 
 class ProgressReporter(Protocol):
@@ -11,7 +11,7 @@ class ProgressReporter(Protocol):
 
     def advance(self, amount: int = 1) -> None: ...
 
-    def task(self, description: str = "", total: Optional[int] = None): ...
+    def task(self, description: str = "", total: Optional[int] = None) -> AbstractContextManager[None]: ...
 
 
 class NullReporter:
