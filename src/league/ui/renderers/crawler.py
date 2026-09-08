@@ -38,4 +38,9 @@ def crawl_stats_table(stats: CrawlStats, title: str = "") -> RenderableType:
             f"[dim]{stats.matches_per_request:.1f}[/]",
         )
 
+    table.add_section()
+    table.add_row("[dim]unfetched[/]", "", f"[rakan]{stats.fetch.get('pending', 0):,}[/]")
+    table.add_row("[dim]stored[/]", "", f"[success]{stats.games:,}[/]")
+    table.add_row("[dim]player-games[/]", "", f"[dim]{stats.played:,}[/]")
+
     return table

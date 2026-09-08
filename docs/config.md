@@ -23,6 +23,7 @@ Categories and keys:
 - `crawler.db_url` (default `http://localhost:16800`), `crawler.namespace` (`featherstorm`), `crawler.database` (`crawler`), `crawler.username` / `crawler.password` (`root`/`root`) — SurrealDB connection
 - `crawler.default_window_days` (default `14`) — time window when `--days`/`--since`/`--all-time` are not passed
 - `crawler.history_page_size` (default `100`, the MATCH-V5 max), `crawler.summoner_workers` (default `8`), `crawler.match_workers` (default `4`), `crawler.claim_batch` (default `8`), `crawler.frontier_low_water` (default `32`)
+- `crawler.fetch_workers` (default `8`), `crawler.fetch_claim_batch` (default `8`) — concurrency for `crawler fetch`, the pass that downloads and stores full match payloads
 - `bladecaller.status_poll_interval` (default `3.0`s) — how often the UI sidebar indicator polls the LCU gameflow phase
 - `bladecaller.match_history_page_size` (default `20`) — matches fetched per "Load more" on the Match History page
 - `bladecaller.dashboard_recent_matches` (default `5`) — rows shown in the dashboard's Recent Matches card

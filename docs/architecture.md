@@ -52,10 +52,53 @@ seed Riot ID ──> get_puuid ──> summoner frontier (SurrealDB)
  claim_summoners()                                        claim_matches()
    └─ MATCH-V5 by-puuid/ids (windowed)                      └─ MATCH-V5 matches/{id}
         ~20 ids per call at 14 days                              metadata.participants → 10 puuids
-   └─ complete_summoner() ──> match frontier              └─ complete_match() ──> summoner frontier
+   └─ complete_summoner() ──> match frontier              └─ store_match() ──> summoner frontier
+                                                                              + game / played rows
 
 stop when total matches >= target, or both frontiers empty (CrawlerExhausted)
 ```
+
+The crawl only downloads the fraction of matches it needs to keep the summoner frontier fed, so most
+discovered IDs never get a payload. `crawler fetch` walks a **second, independent frontier** over the
+same `match` rows to close that gap:
+
+```
+match rows (fetch_state: pending ──> claimed ──> stored | failed)
+        │
+        ▼  fetch workers (x8)
+ claim_unfetched()
+   └─ MATCH-V5 matches/{id}
+        └─ store_match() ──┬─> game:<match_id>            (one row per match)
+                           ├─> played edges               (summoner -> played -> game, one per participant)
+                           └─> summoner rows              (Riot ID + level, and BFS discovery for free)
+```
+
+`store_match()` settles both axes at once, so a match expanded by the crawl is already stored — the two
+passes never pay for the same payload twice.
+
+### Dataset Tables
+
+`summoner` / `match` stay thin because every claim query rescans them; the analytical rows live apart.
+
+| Table | Record id | Holds |
+| --- | --- | --- |
+| `game` | match id | match-level facts — queue, `patch` (`16.17`, not the four-part `gameVersion`), duration, timestamps, winner, per-team bans/objectives |
+| `played` | `<match id>_<participantId>` | one player-game: ~131 typed columns generated from `ParticipantSummary`, plus `perks` / `challenges` as `FLEXIBLE` objects |
+
+`played` is a real graph relation (`DEFINE TABLE played TYPE RELATION IN summoner OUT game`), which puts
+both queries this dataset exists for one hop away — every game a summoner played, and everyone they have
+shared a game with:
+
+```surql
+SELECT VALUE ->played->game FROM summoner:<puuid>;
+SELECT VALUE ->played->game<-played<-summoner FROM summoner:<puuid>;
+```
+
+It is still a flat table, so `SELECT * FROM played` (or `crawler dataset`) hands a dataframe library one
+row per player-game. Column names are snake_case — `totalDamageDealtToChampions` becomes
+`total_damage_dealt_to_champions`, with `championName`/`teamPosition` shortened to `champion`/`position`.
+The column list is **generated from the pydantic model**, not written by hand, so adding a field to
+`ParticipantSummary` adds the column; `featherstorm crawler schema --show` prints the resulting DDL.
 
 Match workers only run when the summoner frontier is below `frontier_low_water`: a summoner expansion
 yields many more IDs per request than a match expansion, so match fetches exist purely to refill the
@@ -98,12 +141,16 @@ more request-hungry (a 14-day window returns ~20 IDs per summoner, not the full 
   - `close()` is idempotent, disconnects the websocket (the bridge always starts it in `run()`) and `aclose()`s the httpx clients — but only closes `bridge.lcu` when the bridge created it, so an *injected* client outlives the bridge. `run()` calls `close()` in a `finally`.
 - **`CrawlerDatabase`** ([league/crawler/database.py](../src/league/crawler/database.py)) — SurrealDB store for the match crawler. Two tables driven by one state machine (`discovered → claimed → expanded | failed`): `summoner` (record id = puuid) and `match` (record id = match id). Async context manager; `connect()` signs in, selects ns/db and applies the schema idempotently (`DEFINE ... IF NOT EXISTS`).
   - Dedupe primitive: `add_summoners()` / `add_matches()` run `INSERT ... ON DUPLICATE KEY UPDATE seen_count += 1` and return **how many were new**. An already-`expanded` record keeps its state and depth — re-seeing a node costs one bumped counter, never a re-fetch.
-  - Frontier: `claim_summoners()` / `claim_matches()` atomically select-and-mark a batch in one query, so a killed run is recoverable; `release_stale_claims()` (called at the start of every crawl) returns abandoned `claimed` rows to `discovered`.
-  - Completion: `complete_summoner()` / `complete_match()` mark the node expanded, insert everything it discovered, and write the participant links in a single round trip, returning the new-node count. `fail_*(permanent=)` parks a node in `failed` or returns it for retry.
-  - `match.participants` is an `array<record<summoner>>` with an array index — one write per match instead of ten edge records. `summoner->played->match` edges are deliberately deferred until per-participant stats exist to hang on them.
+  - Frontier: `claim_summoners()` / `claim_matches()` / `claim_unfetched()` select-and-mark a batch in **one statement** (`UPDATE (subquery) ... RETURN`), so a killed run is recoverable and concurrent workers can't claim the same row; `release_stale_claims()` / `release_stale_fetch_claims()` return abandoned `claimed` rows to the frontier at the start of every run.
+  - Completion: `complete_summoner()` marks the node expanded and inserts everything it discovered in a single round trip, returning the new-node count. `fail_*(permanent=)` parks a node in `failed` or returns it for retry.
+  - `store_match()` is the write path for a full payload: it upserts `game`, inserts the ten `played` edges, enriches the `summoner` rows with the Riot ID and level the payload carries, and settles both the BFS state and the fetch state — one query, idempotent, so re-storing a match is a no-op rather than a duplicate.
+  - `match.participants` is an `array<record<summoner>>` with an array index — the cheap link the BFS needs. The richer `summoner->played->game` relation is written by `store_match()`, where there are per-participant stats to hang on it.
+  - `iter_dataset()` pages `played` / `game` for export, flattening RecordIDs to bare keys and datetimes to ISO strings.
   - Every query goes through `_run()`, which retries `TransactionConflict` with jittered backoff — see [quirks.md](quirks.md).
 - **`MatchCrawler`** ([league/crawler/match_crawler.py](../src/league/crawler/match_crawler.py)) — BFS over the summoner↔match graph until `CrawlConfig.target_matches` distinct match IDs are held. Two worker pools in one `asyncio.TaskGroup`: summoner workers expand match histories, match workers extract the 10 puuids from `metadata.participants`. Match expansion is **demand-driven** — gated on the summoner frontier dropping below `frontier_low_water` — because one summoner expansion yields far more IDs than one match expansion. Raises `CrawlerExhausted` (caught, reported as `status="exhausted"`) when both frontiers empty before the target.
 - **`CrawlConfig`** ([league/crawler/match_crawler.py](../src/league/crawler/match_crawler.py)) — frozen config. `resolved()` freezes the time window to an absolute `start_time` **once**, so a long or resumed run can't slide its own window.
+- **`MatchFetcher`** ([league/crawler/match_fetcher.py](../src/league/crawler/match_fetcher.py)) — the second pass. `cfg.workers` workers claim from the `fetch_state` frontier, request MATCH-V5, and hand the payload to `store_match()`. `FetchConfig.target=None` drains the whole backlog. Resumable: anything left `claimed` by a stop returns to `pending`, either immediately or via the stale-claim sweep. 403/404 and pydantic `ValidationError` are permanent failures (a payload that won't parse now won't parse on a retry); everything else retries up to `max_attempts`.
+- **`crawler/schema.py`** ([league/crawler/schema.py](../src/league/crawler/schema.py)) — the dataset DDL and row builders. `participant_columns()` derives column names and Surreal types from `ParticipantSummary`'s annotations; `game_row()` / `played_row()` / `summoner_row()` turn a `Match` into rows. `patch_of()` trims `gameVersion` to `major.minor`.
 - **`MatchTimelineAnalyzer`** ([league/timeline.py](../src/league/timeline.py)) — analyzes Riot API `MatchTimeline` for highlight events using composable `Predicate` rules. `get_highlight_events()` → `list[HighlightEvent]`. `ParticipantPositionTrack` provides linear-interpolated position at any timestamp.
 - **`Predicate[T]`** ([league/predicates.py](../src/league/predicates.py)) — composable boolean predicate wrapping a `T → bool` function. Supports `&`, `|`, `~` operators. `@rule` decorator registers named factories. `load_rule_from_config(path)` / `load_rule_from_dict(config)` build predicates from JSON config.
 - **`Output`** ([league/ui/output.py](../src/league/ui/output.py)) — the console facade; module-level instance `output`. `print()` (routes through `render()`), `json()`, `rule()`, `info/success/warning/error()`, `prompt()`, `status(msg)` (project spinner baked in), `progress(*columns)`. Every CLI command writes through this.

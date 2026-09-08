@@ -38,6 +38,8 @@ DEFAULT_CONFIG = {
         "match_workers": 4,
         "claim_batch": 8,
         "frontier_low_water": 32,
+        "fetch_workers": 8,
+        "fetch_claim_batch": 8,
     },
     "highlights": {
         "export_constant_quality": "20",

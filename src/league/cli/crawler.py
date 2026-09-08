@@ -1,7 +1,11 @@
+import csv
+import sys
+import json
 import time
 import typer
 import asyncio
 
+from enum import StrEnum
 from typing import Optional, Annotated
 from pathlib import Path
 from datetime import datetime, timezone
@@ -12,7 +16,8 @@ from league.ui.progress import RichProgressReporter
 from league.ui.renderers import crawl_stats_table
 from league.http import RiotRateLimiter
 from league.riot_api import RiotAPIClient
-from league.crawler import CrawlConfig, MatchCrawler, CrawlerDatabase
+from league.crawler import GAME, PLAYED, CrawlConfig, FetchConfig, MatchCrawler, MatchFetcher, CrawlerDatabase
+from league.crawler.schema import dataset_schema
 from league.enums import QueueChoice, MatchTypeChoice, resolve_queue, resolve_match_type
 
 from league.cli._shared import _riot_client
@@ -20,6 +25,16 @@ from league.cli._shared import _riot_client
 app = typer.Typer(name="crawler", no_args_is_help=True, add_completion=False, help="Match crawler commands")
 
 SECONDS_PER_DAY = 86400
+
+
+class DatasetTable(StrEnum):
+    Played = PLAYED
+    Game = GAME
+
+
+class DatasetFormat(StrEnum):
+    Jsonl = "jsonl"
+    Csv = "csv"
 
 
 def _epoch(value: Optional[str], label: str) -> Optional[int]:
@@ -114,6 +129,94 @@ def _describe_window(cfg: CrawlConfig) -> str:
     return f"{fmt(cfg.start_time, 'beginning')} -> {fmt(cfg.end_time, 'now')}"
 
 
+@app.command(name="fetch", help="Download and store the full payload for crawled match IDs.")
+def fetch(
+    count: Optional[int] = typer.Option(None, "--count", "-n", help="Stop after storing N matches (default: drain the backlog)."),
+    max_depth: Optional[int] = typer.Option(None, help="Only fetch matches found at or above this BFS depth."),
+    workers: Optional[int] = typer.Option(None, help="Concurrent fetch workers (default: crawler.fetch_workers)."),
+):
+    cfg = FetchConfig(
+        target=count,
+        max_depth=max_depth,
+        workers=workers if workers is not None else config.get("crawler.fetch_workers"),
+        claim_batch=config.get("crawler.fetch_claim_batch"),
+    )
+
+    async def run():
+        client = _crawler_client()
+        async with CrawlerDatabase() as db:
+            pending = await db.unfetched_count(max_depth=max_depth)
+            if not pending:
+                output.warning("Nothing to fetch — every crawled match already has its payload stored.")
+                return
+
+            output.print(f"Pending: [rakan]{pending:,}[/]   Workers: [eminence]{cfg.workers}[/]")
+
+            fetcher = MatchFetcher(client, db, reporter=RichProgressReporter())
+            started = time.monotonic()
+            stats = await fetcher.fetch(cfg)
+            elapsed = time.monotonic() - started
+
+            output.print(crawl_stats_table(stats, title=f"Fetch complete in {elapsed:.1f}s"))
+            output.success(f"Stored {fetcher.stored:,} match(es), {fetcher.failed:,} failed, {stats.played:,} player-games held.")
+
+        await client.close()
+
+    asyncio.run(run())
+
+
+@app.command(name="dataset", help="Export stored match data as JSONL or CSV for analysis.")
+def dataset(
+    table: Annotated[DatasetTable, typer.Option("--table", "-t", help="Which table to export.")] = DatasetTable.Played,
+    out: Optional[Path] = typer.Option(None, "--out", "-o", help="File to write to; prints to the terminal when omitted."),
+    fmt: Annotated[DatasetFormat, typer.Option("--format", "-f", help="Output format.")] = DatasetFormat.Jsonl,
+    queue: Optional[int] = typer.Option(None, help="Only rows from this queue id (e.g. 420)."),
+    patch: Optional[str] = typer.Option(None, help="Only rows from this patch (e.g. 16.17)."),
+    limit: Optional[int] = typer.Option(None, help="Stop after N rows."),
+):
+    async def run():
+        async with CrawlerDatabase() as db:
+            rows = db.iter_dataset(table.value, queue=queue, patch=patch, limit=limit)
+
+            if out is None:
+                written = await _write_rows(rows, sys.stdout, fmt)
+            else:
+                out.parent.mkdir(parents=True, exist_ok=True)
+                with out.open("w", encoding="utf-8", newline="") as handle:
+                    written = await _write_rows(rows, handle, fmt)
+
+            if not written:
+                output.warning(f"No rows in `{table.value}` matching that filter.")
+            elif out is not None:
+                output.success(f"Wrote {written:,} {table.value} row(s) to {out}")
+
+    asyncio.run(run())
+
+
+async def _write_rows(rows, handle, fmt: DatasetFormat) -> int:
+    """CSV needs a header before the first row and JSONL doesn't, so the writer is only
+    built once the first row has told us what the columns are."""
+    writer = None
+    written = 0
+
+    async for row in rows:
+        if fmt is DatasetFormat.Csv:
+            if writer is None:
+                writer = csv.DictWriter(handle, fieldnames=list(row), extrasaction="ignore")
+                writer.writeheader()
+            writer.writerow({key: _flatten(value) for key, value in row.items()})
+        else:
+            handle.write(json.dumps(row, default=str) + "\n")
+        written += 1
+
+    return written
+
+
+def _flatten(value):
+    """`challenges` / `perks` / `teams` are nested objects — a CSV cell can only hold text."""
+    return json.dumps(value, default=str) if isinstance(value, (dict, list)) else value
+
+
 @app.command(name="stats", help="Show the current state of the crawl database.")
 def stats():
     async def run():
@@ -148,7 +251,15 @@ def export(
 
 
 @app.command(name="schema", help="Apply (or re-verify) the crawler schema.")
-def schema():
+def schema(
+    show: bool = typer.Option(False, "--show", help="Print the generated dataset DDL instead of applying it."),
+):
+    # the `game` / `played` DDL is generated from ParticipantSummary, so printing it is the
+    # only way to see the column list an analysis query can rely on
+    if show:
+        output.print(dataset_schema().strip())
+        return
+
     async def run():
         async with CrawlerDatabase() as db:
             output.success(f"Schema applied to {db.namespace}/{db.database} at {db.url}")

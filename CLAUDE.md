@@ -53,10 +53,12 @@ league-of-snakes/
 │   ├── timeline.py       # MatchTimelineAnalyzer, HighlightEvent, ParticipantPositionTrack (Riot API match timeline → highlights) — analysis only, no rendering
 │   ├── highlights.py     # HighlightManager (replay download, open replay client, OBS-style recording of clip ranges)
 │   ├── watcher.py        # MatchWatcher (session lifecycle, reconnect logic, event routing)
-│   ├── crawler/          # Match-ID crawler (SurrealDB-backed BFS over the summoner↔match graph)
-│   │   ├── __init__.py   # re-exports CrawlerDatabase, MatchCrawler, CrawlConfig, CrawlStats
-│   │   ├── database.py   # CrawlerDatabase (schema, dedupe, frontier claim/complete), Node, CrawlStats
-│   │   └── match_crawler.py # MatchCrawler + CrawlConfig — the BFS crawl loop
+│   ├── crawler/          # Match crawler (SurrealDB-backed BFS over the summoner↔match graph + match dataset)
+│   │   ├── __init__.py   # re-exports CrawlerDatabase, MatchCrawler, MatchFetcher, configs, CrawlStats
+│   │   ├── schema.py     # `game` / `played` dataset DDL (generated from ParticipantSummary) + row builders
+│   │   ├── database.py   # CrawlerDatabase (schema, dedupe, frontier claim/complete, store_match, exports)
+│   │   ├── match_crawler.py # MatchCrawler + CrawlConfig — the BFS crawl loop
+│   │   └── match_fetcher.py # MatchFetcher + FetchConfig — downloads and stores full match payloads
 │   ├── cli/              # Typer CLI package — primary entry point (featherstorm)
 │   │   ├── __init__.py   # runs config.init(), re-exports `app` (keeps league.cli:app entry point)
 │   │   ├── main.py       # root app: callback + `companion` command, add_typer each group
@@ -65,7 +67,7 @@ league-of-snakes/
 │   │   ├── cfg.py        # cfg_app
 │   │   ├── riot.py       # riot_app (matches, match, timeline, puuid, ranked, live-game)
 │   │   ├── highlights.py # highlights_app
-│   │   ├── crawler.py    # crawler_app (crawl, stats, export, schema, reset)
+│   │   ├── crawler.py    # crawler_app (crawl, fetch, dataset, stats, export, schema, reset)
 │   │   └── dragon.py     # dragon_app (item, champion, art)
 │   ├── ui/               # Terminal rendering layer — the only place that writes to the console
 │   │   ├── __init__.py   # public surface (output, console, setup_logging, render, RichProgressReporter, MatchRow)
@@ -134,9 +136,13 @@ uv run featherstorm riot live-game ["Name"] ["TAG"]   # currently ongoing match 
 uv run featherstorm highlights capture [--game-path P] [--export-path P] [--name N] [--tagline T] [--count N]
 uv run featherstorm crawler crawl [--count N] [--days N | --since YYYY-MM-DD --until YYYY-MM-DD | --all-time]
                                   [--queue ...] [--match-type ...] [--max-depth N] [--reset]
+uv run featherstorm crawler fetch [--count N] [--max-depth N] [--workers N]
+                                  # downloads + stores the full payload for crawled match IDs
+uv run featherstorm crawler dataset [--table played|game] [--format jsonl|csv] [--out PATH]
+                                    [--queue 420] [--patch 16.17] [--limit N]
 uv run featherstorm crawler stats
 uv run featherstorm crawler export [--out PATH] [--limit N] [--state expanded]
-uv run featherstorm crawler schema
+uv run featherstorm crawler schema [--show]
 uv run featherstorm crawler reset [--force]
 uv run featherstorm dragon item <item_id>
 uv run featherstorm dragon champion <champion_id>

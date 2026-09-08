@@ -97,6 +97,7 @@ class RiotRateLimiter:
                 if wait <= 0:
                     self._pending += 1
                     return
+                log.info(f"App rate limit window full, waiting {wait:.0f}s")
                 await asyncio.sleep(wait)
 
     def release(self) -> None:

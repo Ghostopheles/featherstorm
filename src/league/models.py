@@ -2,7 +2,7 @@ import logging
 
 from enum import Enum
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import Field, BaseModel, ConfigDict
 from dataclasses import dataclass, field, fields
 
 from league.enums import GameEventType, GameResult, GameTeam, Queue, Map, RankedQueueType, RankedTier, RankedDivision
@@ -457,52 +457,181 @@ class MatchMetadata(BaseModel):
 
 
 class ChallengesSummary(BaseModel):
+    """MATCH-V5 `participant.challenges`.
+
+    Riot adds, renames and retires challenge keys every patch and only sends the ones
+    a game mode produced, so every field is optional and unknown keys are kept verbatim —
+    `model_dump()` round-trips the whole payload for storage.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
     kda: Optional[float] = None
     killParticipation: Optional[float] = None
     teamDamagePercentage: Optional[float] = None
+    damageTakenOnTeamPercentage: Optional[float] = None
     damagePerMinute: Optional[float] = None
     goldPerMinute: Optional[float] = None
-    soloKills: Optional[int] = None
-    takedowns: Optional[int] = None
-    skillshotsHit: Optional[int] = None
-    skillshotsDodged: Optional[int] = None
     visionScorePerMinute: Optional[float] = None
-    legendaryCount: Optional[int] = None
-    controlWardsPlaced: Optional[int] = None
+    visionScoreAdvantageLaneOpponent: Optional[float] = None
+    gameLength: Optional[float] = None
+    bountyGold: Optional[float] = None
+
+    soloKills: Optional[float] = None
+    takedowns: Optional[float] = None
+    multikills: Optional[float] = None
+    killingSprees: Optional[float] = None
+    skillshotsHit: Optional[float] = None
+    skillshotsDodged: Optional[float] = None
+    abilityUses: Optional[float] = None
+    legendaryCount: Optional[float] = None
+    controlWardsPlaced: Optional[float] = None
+    stealthWardsPlaced: Optional[float] = None
+    wardTakedowns: Optional[float] = None
+    turretPlatesTaken: Optional[float] = None
+    turretTakedowns: Optional[float] = None
+    dragonTakedowns: Optional[float] = None
+    baronTakedowns: Optional[float] = None
+    riftHeraldTakedowns: Optional[float] = None
+    epicMonsterSteals: Optional[float] = None
+    laneMinionsFirst10Minutes: Optional[float] = None
+    jungleCsBefore10Minutes: Optional[float] = None
+    maxCsAdvantageOnLaneOpponent: Optional[float] = None
+    maxLevelLeadLaneOpponent: Optional[float] = None
+    laningPhaseGoldExpAdvantage: Optional[float] = None
+    earlyLaningPhaseGoldExpAdvantage: Optional[float] = None
+    effectiveHealAndShielding: Optional[float] = None
+    enemyChampionImmobilizations: Optional[float] = None
+    saveAllyFromDeath: Optional[float] = None
+    perfectGame: Optional[float] = None
+
+
+class PerkStats(BaseModel):
+    defense: int = 0
+    flex: int = 0
+    offense: int = 0
+
+
+class PerkSelection(BaseModel):
+    perk: int
+    var1: int = 0
+    var2: int = 0
+    var3: int = 0
+
+
+class PerkStyle(BaseModel):
+    description: str
+    style: int
+    selections: list[PerkSelection] = Field(default_factory=list)
+
+
+class ParticipantPerks(BaseModel):
+    statPerks: PerkStats = Field(default_factory=PerkStats)
+    styles: list[PerkStyle] = Field(default_factory=list)
+
+    @property
+    def keystone(self) -> Optional[int]:
+        primary = next((s for s in self.styles if s.description == "primaryStyle"), None)
+        return primary.selections[0].perk if primary and primary.selections else None
 
 
 class ParticipantSummary(BaseModel):
+    """One player's line in a MATCH-V5 match.
+
+    Only fields Riot has always sent are required; anything mode-specific or added in a
+    later patch is optional so historical matches still validate.
+    """
+
     # Identity
     puuid: str
     participantId: int
-    riotIdGameName: str
-    riotIdTagline: str
     teamId: int
+    riotIdGameName: str = ""
+    riotIdTagline: str = ""
+    summonerName: str = ""
+    summonerId: Optional[str] = None
+    summonerLevel: Optional[int] = None
+    profileIcon: Optional[int] = None
+    # Arena / subteam
+    playerSubteamId: Optional[int] = None
+    subteamPlacement: Optional[int] = None
+    placement: Optional[int] = None
     # Champion & role
+    championId: Optional[int] = None
     championName: str
+    championTransform: Optional[int] = None
     champLevel: int
-    teamPosition: str
+    champExperience: Optional[int] = None
+    teamPosition: str = ""
+    individualPosition: Optional[str] = None
+    lane: Optional[str] = None
+    role: Optional[str] = None
+    positionAssignedByMatchmaking: Optional[str] = None
+    selectedRolePreferences: Optional[str] = None
     # Outcome
     win: bool
-    gameEndedInSurrender: bool
+    gameEndedInSurrender: bool = False
+    gameEndedInEarlySurrender: bool = False
+    teamEarlySurrendered: bool = False
+    eligibleForProgression: Optional[bool] = None
+    wasAfk: Optional[bool] = None
+    timePlayed: Optional[int] = None
     # Core combat
     kills: int
     deaths: int
     assists: int
+    killingSprees: Optional[int] = None
+    largestKillingSpree: Optional[int] = None
+    largestMultiKill: Optional[int] = None
+    largestCriticalStrike: Optional[int] = None
+    doubleKills: int = 0
+    tripleKills: int = 0
+    quadraKills: int = 0
+    pentaKills: int = 0
+    # Minions
     totalMinionsKilled: int
     neutralMinionsKilled: int
-    # Damage
+    totalAllyJungleMinionsKilled: Optional[int] = None
+    totalEnemyJungleMinionsKilled: Optional[int] = None
+    # Damage dealt
+    totalDamageDealt: Optional[int] = None
     totalDamageDealtToChampions: int
+    physicalDamageDealt: Optional[int] = None
+    physicalDamageDealtToChampions: Optional[int] = None
+    magicDamageDealt: Optional[int] = None
+    magicDamageDealtToChampions: Optional[int] = None
+    trueDamageDealt: Optional[int] = None
+    trueDamageDealtToChampions: Optional[int] = None
+    damageDealtToBuildings: int = 0
+    damageDealtToTurrets: Optional[int] = None
+    damageDealtToObjectives: Optional[int] = None
+    damageDealtToEpicMonsters: Optional[int] = None
+    # Damage taken & mitigation
     totalDamageTaken: int
-    damageSelfMitigated: int
-    damageDealtToBuildings: int
+    physicalDamageTaken: Optional[int] = None
+    magicDamageTaken: Optional[int] = None
+    trueDamageTaken: Optional[int] = None
+    damageSelfMitigated: int = 0
+    # Healing & shielding
+    totalHeal: int = 0
+    totalHealsOnTeammates: int = 0
+    totalUnitsHealed: Optional[int] = None
+    totalDamageShieldedOnTeammates: int = 0
+    # Crowd control
+    timeCCingOthers: int = 0
+    totalTimeCCDealt: Optional[int] = None
+    # Survival
+    totalTimeSpentDead: int = 0
+    longestTimeSpentLiving: int = 0
     # Vision
     visionScore: int
     wardsPlaced: int
     wardsKilled: int
-    detectorWardsPlaced: int
+    detectorWardsPlaced: int = 0
+    visionWardsBoughtInGame: Optional[int] = None
     # Gold
     goldEarned: int
+    goldSpent: Optional[int] = None
     # Items
     item0: int
     item1: int
@@ -511,37 +640,98 @@ class ParticipantSummary(BaseModel):
     item4: int
     item5: int
     item6: int
-    # Multi-kills
-    doubleKills: int
-    tripleKills: int
-    quadraKills: int
-    pentaKills: int
+    itemsPurchased: Optional[int] = None
+    consumablesPurchased: Optional[int] = None
+    roleBoundItem: Optional[int] = None
     # Objectives
-    turretKills: int
-    inhibitorKills: int
-    dragonKills: int
-    baronKills: int
-    firstBloodKill: bool
-    # Survival & CC
-    totalTimeSpentDead: int
-    longestTimeSpentLiving: int
-    timeCCingOthers: int
-    # Healing & shielding
-    totalHeal: int
-    totalHealsOnTeammates: int
-    totalDamageShieldedOnTeammates: int
-    # Summoner spells
+    turretKills: int = 0
+    turretTakedowns: Optional[int] = None
+    turretsLost: Optional[int] = None
+    inhibitorKills: int = 0
+    inhibitorTakedowns: Optional[int] = None
+    inhibitorsLost: Optional[int] = None
+    nexusKills: Optional[int] = None
+    nexusTakedowns: Optional[int] = None
+    nexusLost: Optional[int] = None
+    dragonKills: int = 0
+    baronKills: int = 0
+    objectivesStolen: Optional[int] = None
+    objectivesStolenAssists: Optional[int] = None
+    firstBloodKill: bool = False
+    firstBloodAssist: bool = False
+    firstTowerKill: bool = False
+    firstTowerAssist: bool = False
+    # Spells
     summoner1Id: int
     summoner2Id: int
-    # Challenges
+    summoner1Casts: Optional[int] = None
+    summoner2Casts: Optional[int] = None
+    spell1Casts: Optional[int] = None
+    spell2Casts: Optional[int] = None
+    spell3Casts: Optional[int] = None
+    spell4Casts: Optional[int] = None
+    # Arena augments
+    playerAugment1: Optional[int] = None
+    playerAugment2: Optional[int] = None
+    playerAugment3: Optional[int] = None
+    playerAugment4: Optional[int] = None
+    playerAugment5: Optional[int] = None
+    playerAugment6: Optional[int] = None
+    # Pings
+    allInPings: int = 0
+    assistMePings: int = 0
+    basicPings: int = 0
+    commandPings: int = 0
+    dangerPings: int = 0
+    enemyMissingPings: int = 0
+    enemyVisionPings: int = 0
+    getBackPings: int = 0
+    holdPings: int = 0
+    needVisionPings: int = 0
+    onMyWayPings: int = 0
+    pushPings: int = 0
+    retreatPings: int = 0
+    visionClearedPings: int = 0
+    # Nested
+    perks: Optional[ParticipantPerks] = None
     challenges: Optional[ChallengesSummary] = None
+
+    @property
+    def cs(self) -> int:
+        return self.totalMinionsKilled + self.neutralMinionsKilled
+
+
+class TeamBan(BaseModel):
+    championId: int
+    pickTurn: int
+
+
+class Objective(BaseModel):
+    first: bool = False
+    kills: int = 0
+
+
+class TeamObjectives(BaseModel):
+    """Per-objective first-blood/kill counts. Riot adds new objectives (`horde`, `atakhan`)
+    mid-season, so unknown keys are preserved rather than dropped."""
+
+    model_config = ConfigDict(extra="allow")
+
+    champion: Optional[Objective] = None
+    tower: Optional[Objective] = None
+    inhibitor: Optional[Objective] = None
+    baron: Optional[Objective] = None
+    dragon: Optional[Objective] = None
+    riftHerald: Optional[Objective] = None
+    horde: Optional[Objective] = None
+    atakhan: Optional[Objective] = None
 
 
 class TeamSummary(BaseModel):
     teamId: int
     win: bool
-    bans: list[dict]
-    objectives: dict
+    bans: list[TeamBan] = Field(default_factory=list)
+    objectives: TeamObjectives = Field(default_factory=TeamObjectives)
 
 
 class MatchInfo(BaseModel):
@@ -553,6 +743,23 @@ class MatchInfo(BaseModel):
     platformId: str
     participants: list[ParticipantSummary]
     teams: list[TeamSummary]
+
+    gameId: Optional[int] = None
+    gameName: Optional[str] = None
+    gameType: Optional[str] = None
+    gameCreation: Optional[int] = None
+    gameStartTimestamp: Optional[int] = None
+    gameEndTimestamp: Optional[int] = None
+    endOfGameResult: Optional[str] = None
+    tournamentCode: Optional[str] = None
+
+    @property
+    def remake(self) -> bool:
+        """Riot marks aborted games with a non-`GameComplete` result; older matches have
+        no field at all, where a sub-5-minute duration is the only signal."""
+        if self.endOfGameResult is not None:
+            return self.endOfGameResult != "GameComplete"
+        return self.gameDuration < 300
 
 
 class Match(BaseModel):

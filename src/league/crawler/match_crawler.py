@@ -6,6 +6,8 @@ import logging
 from typing import Optional
 from dataclasses import replace, dataclass
 
+from pydantic import ValidationError
+
 from league.riot_api import RiotAPIClient
 from league.enums import Queue, MatchType
 from league.reporting import NullReporter, ProgressReporter
@@ -223,16 +225,13 @@ class MatchCrawler:
         except httpx.HTTPStatusError as e:
             await self._handle_failure(MATCH, node, e, cfg)
             return
-        except (httpx.RequestError, ValueError) as e:
+        except (httpx.RequestError, ValidationError, ValueError) as e:
             await self._handle_failure(MATCH, node, e, cfg)
             return
 
-        new = await self.db.complete_match(
-            node.id,
-            match.metadata.participants,
-            depth=node.depth + 1,
-            queue=int(match.info.queueId),
-        )
+        # the full payload is already in hand, so storing the dataset row costs no extra
+        # request — `store_match()` settles the BFS state as well as writing `game`/`played`
+        new = await self.db.store_match(match, depth=node.depth + 1)
         self._record(new, cfg)
 
     def _record(self, new: int, cfg: CrawlConfig) -> None:
