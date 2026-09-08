@@ -1,0 +1,40 @@
+# Known Quirks
+
+- `DATA_DIR` in [league/api.py](../src/league/api.py) hardcoded to absolute path (`X:/league-of-snakes/data`). Drive letter changes → update it.
+- `chroma` dep is local path ref (`../rzr-chroma`); both repos must be disk siblings. Source at `../rzr-chroma/src/chroma`.
+- `govee` dep is local path ref (`../govee`); must also be disk sibling. Source at `../govee/src/govee`.
+- Live Client API only available during active game. `MatchWatcher` polls every `companion.wait_interval` (2s default) until connected, then every `companion.poll_interval` (0.25s default). No manual restart between games.
+- All three companion features resolve through `feature_enabled(flag, key, default=...)` ([league/companion.py](../src/league/companion.py)): `--no-govee` / `--no-discord` / `--no-chroma` on `featherstorm companion` only *disable* — the config key (`companion.govee_enabled`, `companion.chroma_enabled`, `discord.enable_rich_presence`) is what turns a feature on.
+- Disabled features are still entered as objects, not `None` — `ChromaLighting` / `GoveeLights` no-op on every method when off, so callbacks have no `if chroma:` guards. Discord is the exception: `open_presence()` yields `None` when off (it wraps a third-party class), so lobby-presence callbacks are only wired when it exists.
+- The LCU websocket is now started by `LeagueEventBridge.run()` regardless of whether Discord presence is on — it used to be started only alongside presence. Costs one websocket plus a Data Dragon `initialize()` on startup.
+- `riot-root-cert.pem` renamed to `riotgames.pem` but no longer used — `LeagueClient` uses `verify=False`.
+- pypresence `AioPresence.close()` is sync and calls `loop.close()` on the running event loop — never call it. `DiscordRichPresence.close()` ([league/discord/presence.py](../src/league/discord/presence.py)) closes the IPC pipe transport directly instead. `run_companion()` closes presence in a `finally` so Ctrl+C doesn't leave an unclosed proactor pipe transport (`ValueError: I/O operation on closed pipe` warning at exit).
+- Spectator mode: `/activeplayer` returns `{"error": "..."}` with HTTP 200 (not 4xx). Both `get_active_player()` and `AllGameData.__post_init__` guard against this, returning `None` for `activePlayer`.
+- `Player.runes` and `ActivePlayer.fullRunes` can be empty list `[]` in some game modes — both typed `Optional`, guarded with falsy check before construction.
+- `FirstBrick` events can have `TurretKilled = None` in some game modes — `on_first_brick` guards before calling `Turret.from_str()`.
+- Govee local IP auto-detection in `govee/shared.py` uses socket to `8.8.8.8:80`. May fail on isolated networks — hardcode `LISTEN_ADDR` in `../govee/src/govee/shared.py` if needed.
+- Govee discovery is periodic (every 180s); allow 0.5–2s after `listener.start()` before accessing `listener.devices`. New network devices may take up to 3 minutes.
+- Govee sends fire-and-forget — no confirmation device received command.
+- LCU match history (`/lol-match-history/v1/products/lol/current-summoner/matches`) returns **only the current summoner's participant** per game, not the full lobby — see the fixtures in `ref/`. The ten-player scoreboard has to come from Riot MATCH-V5; the match id is `f"{platformId}_{gameId}"`.
+- **LCU puuids are not Riot puuids.** LCU match history reports an anonymized per-match UUID (`03c57e4e-11c8-550e-…`, 36 chars) where the Riot API reports the account's real 78-character puuid, so they never compare equal and `PlayerMatch.from_match(match, lcu_puuid)` raises `StopIteration`. Cross-reference the two sources on `participantId` instead — it is identical in both.
+- **MATCH-V5 doesn't serve every queue.** Brawl (queue `2400`, Live Client game mode `KIWI`) returns **403 Forbidden**, custom / Practice Tool games (`3140`) return **404**. Both are permanent, not transient faults or a bad key — don't retry, and don't report them as a request failure.
+- `RiotAPIClient.get_match()` re-raises the underlying `httpx.HTTPStatusError` rather than handing `None` to pydantic, so callers can read the status code. Everything else on `BaseAPIClient` still returns `None` on HTTP error.
+- `DataDragon._make_champion_lookup()` stores `by-id` keys as **strings**. `get_champion_name()` / `get_champion()` index with `str(championID)`, and the JSON cache round-trip stringifies them anyway — int keys silently broke every lookup on the run that first built the cache.
+- Upgrading Data Dragon version in `dragon.py`: test `get_item()` against a few items (e.g. `1001` Boots, `1054` Doran's Blade) — new CDN response fields cause `TypeError` on construction since `DragonItem` uses `**data` unpacking.
+- LCU websocket callbacks must be registered **before** `connect()` — `LCUWebsocketClient.on()` raises once the listen task exists. `LeagueEventBridge.__init__` therefore registers its own internal dispatchers up front and fans out to user callbacks itself, so `bridge.on(...)` is safe at any time.
+- The LCU sends a **list** payload for some `/lol-lobby/v2/lobby` transitions — `LeagueEventBridge` filters these out of its lobby dispatch, so bridge lobby callbacks don't need their own `isinstance(event.data, list)` guard.
+- `data/help.json` is a dump of the LCU `/help` endpoint — 976 entries under `events`, the authoritative list of every `OnJsonApiEvent` the client emits. Use it instead of guessing endpoint names.
+- LCU websocket event names derive from endpoint paths: slashes → underscores, prefixed `OnJsonApiEvent` (e.g. `/lol-lobby/v2/lobby` → `OnJsonApiEvent_lol-lobby_v2_lobby`).
+- `LCUWebsocketClient.on()` with `type=None` never fires: `_on_message` matches `handler.event_type == event.eventType` exactly. Always pass an explicit `LCUWebsocketEventType`.
+- `LCUGameflowPhase.Home` maps to the literal string `"None"` (LCU returns `"None"` when idle in client).
+- Live Client `gameMode` string `"KIWI"` = ARAM (see `get_game_mode_string()` in `league_presence.py`); `"CLASSIC"` intentionally maps to `None` (no suffix on presence name).
+- Queue type for presence can't come from Live Client API — `try_update_queue_type()` fetches it from Riot SPECTATOR-V5 (`gameQueueConfigId`), needs `RIOT_API_KEY`, only sets once per match.
+- `Queue` enum has duplicate historic names suffixed `_2`/`_3`; live IDs usually highest suffix (ARAM = `Q_5V5_ARAM_GAMES_3` = 450).
+- op.gg button on Discord presence disabled (commented out in `init_match()`).
+- **SurrealDB record IDs must be built with `RecordID(table, key)`**, never string-interpolated. puuids can start with a digit (`03c57e4e-…`) and Riot IDs contain `#`, both of which break bare `summoner:{key}` syntax. `RecordID` escapes them for you.
+- **SurrealDB parse/validation errors arrive as a top-level `error` key with no per-statement `result` list at all.** Checking only each statement's `status == "ERR"` silently reads a failed query as "zero statements ran" and returns an empty list. `CrawlerDatabase._run_once()` checks both.
+- `ORDER BY <field>` requires that field to be in the SELECT projection — Surreal raises `Missing order idiom` otherwise. The frontier claim selects `discovered_at` purely to order by it.
+- The rocksdb backend uses **optimistic** transactions, so concurrent read-then-update claims collide constantly with `Transaction conflict: Resource busy`. `CrawlerDatabase._run()` retries these with jittered exponential backoff (`MAX_CONFLICT_RETRIES`); it is expected traffic, not an error.
+- `AsyncSurreal("http://...")` returns the HTTP connection, whose `close()` raises `NotImplementedError` (it is stateless). `CrawlerDatabase.close()` swallows that.
+- The SDK's `query()` returns only the **first** statement's result. `CrawlerDatabase` uses `query_raw()` and reads the last statement instead, so multi-statement claim/complete queries work.
+- `LookupEnum.from_name()` / `LookupStrEnum.from_name()` compare against `member.name.upper()`. They previously did `cls[name.upper()]`, which failed for every mixed-case member (`MatchType.Ranked`) — `featherstorm riot matches --match-type ranked` raised `KeyError`.
