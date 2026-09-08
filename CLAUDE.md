@@ -20,7 +20,7 @@ league-of-snakes/
 │   ├── api.py            # LeagueClient (Live Client API poller)
 │   ├── bridge.py         # LeagueEventBridge + LeagueEvent — unified in-game/out-of-game event hub
 │   ├── cache.py          # DataCache (simple JSON/text file cache under a directory)
-│   ├── companion.py      # run_companion() — async companion mode runner; Effects dataclass + Chroma setup; wires gameflow + Discord presence
+│   ├── companion.py      # run_companion() — async companion mode runner; ChromaLighting/GoveeLights/open_presence/open_gameflow feature context managers
 │   ├── markup.py         # Pure markup-string helpers (format_file_path/url/kda/result/duration/player) — no rich, safe for backend messages
 │   ├── reporting.py      # ProgressReporter protocol + NullReporter — backend-facing progress channel
 │   ├── models.py         # GameEvent, ActivePlayer, Player, AllGameData, Match, PlayerMatch, DragonItem, CurrentGameInfo (SPECTATOR-V5)
@@ -103,7 +103,7 @@ league-of-snakes/
 Primary (CLI, recommended):
 ```bash
 uv run featherstorm companion [--no-govee] [--no-discord] [--no-chroma]
-                                       # Govee via companion.govee_enabled, Discord presence via discord.enable_rich_presence
+                                       # Govee via companion.govee_enabled, Chroma via companion.chroma_enabled, Discord presence via discord.enable_rich_presence
                                        # --no-* flags force a feature off for that run (they can't force one on)
 uv run featherstorm riot matches ["Name"] ["TAG"] [--count N] [--match-type ranked|normal|tourney|tutorial]
 uv run featherstorm riot match <match_id>
@@ -141,6 +141,7 @@ Categories and keys:
 - `companion.default_player_name` — fallback name when not in active game
 - `companion.default_player_tagline` — fallback tagline (used by riot commands as default arg)
 - `companion.govee_enabled` (default `False`) — toggle Govee integration (replaces old `--no-govee` CLI flag)
+- `companion.chroma_enabled` (default `False`) — toggle Razer Chroma integration
 - `companion.max_reconnect_attempts` (default `5`), `companion.wait_interval` (default `2.0`s), `companion.poll_interval` (default `0.25`s), `companion.session_timeout` (default `30.0`s)
 - `discord.enable_rich_presence` (default `True`) — toggle Discord Rich Presence in companion mode
 - `discord.app_id` — Discord application ID for Rich Presence
@@ -221,7 +222,9 @@ LCU websocket (wss://localhost:<port>, lockfile auth)
 - **`DiscordRichPresence`** ([league/discord/presence.py](src/league/discord/presence.py)) — generic pypresence `AioPresence` wrapper. `DiscordActivity` dataclass holds full activity payload; `set_activity()` / `update_activity(**kwargs)` mutate local state, `update()` pushes to Discord.
 - **`LeagueRichPresence`** ([league/discord/league_presence.py](src/league/discord/league_presence.py)) — League-aware presence. Tracks `SessionStatus` (Empty/InLobby/InQueue/InGame). `init_lobby()` from LCU lobby data (queue description, party size), `init_match()` from `AllGameData` (champion + lane opponent, skin splash as large image, role icon as small image), 15s update loop pushes KDA/CS state. `try_update_queue_type()` resolves queue via Riot SPECTATOR-V5 live match.
 - **`CurrentGameInfo`** ([league/models.py](src/league/models.py)) — SPECTATOR-V5 active-game model (`gameQueueConfigId`, participants, bans).
-- **`Effects`** ([league/companion.py](src/league/companion.py)) — `@dataclass` holding Chroma effect state. Fields: `blue`, `red`, `white` (static base effect IDs), plus flash animation fields (`kill_flash`, `teammate_kill_flash`, `objective_flash`, `turret_flash`, `teammate_turret_flash`, `first_brick_flash`) — each `dict[Optional[GameTeam], ChromaAnimation]` keyed by team so animation fades back to correct base color.
+- **`Effects`** ([league/companion.py](src/league/companion.py)) — `@dataclass` holding Chroma effect state. Fields: `blue`, `red`, `white` (static base effect IDs), plus flash animation fields (`kill_flash`, `teammate_kill_flash`, `objective_flash`, `turret_flash`, `teammate_turret_flash`, `first_brick_flash`) — each `dict[Optional[GameTeam], ChromaAnimation]` keyed by team so animation fades back to correct base color. `base_for(team)` / `flash_for(name, team)` do the team lookup.
+- **`ChromaLighting`** ([league/companion.py](src/league/companion.py)) — async context manager owning the `ChromaSession`, device and `Effects`. `await set_team(team)` sets the base colour, `flash(name, team)` fires an animation. Constructed with `enabled=False` it enters cleanly and every method no-ops.
+- **`GoveeLights`** ([league/companion.py](src/league/companion.py)) — same shape for Govee: `__aenter__` discovers devices and applies config defaults, `set_team(team)` pushes a colour, `__aexit__` calls `listener.cleanup()`. No-ops when disabled.
 - **`MatchWatcher`** ([league/watcher.py](src/league/watcher.py)) — wraps `LeagueClient`, manages session lifecycle (connect → poll → disconnect → reconnect). Key methods: `watcher.on(event_type, callback)`, `@watcher.on_session_start`, `@watcher.on_session_end`, `await watcher.run()`. Config keys: `companion.max_reconnect_attempts`, `companion.wait_interval`, `companion.poll_interval`, `companion.session_timeout`. Uses `LeagueClientStatus` to decide reconnect vs clean exit. Ctor param `exit_on_timeout` (default `True`): when `False`, `run()` keeps waiting forever instead of exiting after `session_timeout` with no game (used by `LeagueEventBridge`). Ctor param `reporter` (default `NullReporter()`): drives the "waiting for client/match" spinner — `run_companion()` passes a `RichProgressReporter`.
 - **`LeagueEventBridge`** ([league/bridge.py](src/league/bridge.py)) — top-level unified event hub bridging in-game (Live Client API via `MatchWatcher`) and out-of-game (LCU websocket) events. `bridge.on(LeagueEvent.X, cb)` (decorator-or-direct, sync or async), `await bridge.run()`. `LeagueEvent` StrEnum = all `GameEventType` members (payload `GameEvent`) + `LobbyCreated/Updated/Deleted` (payload `LCUWebsocketEvent`) + `PhaseChanged` (payload `LCUGameflowPhase`, via ws endpoint `/lol-gameflow/v1/gameflow-phase`) + `SessionStart`/`SessionEnd` (no args). Registers internal fan-out dispatchers in `__init__` so user callbacks can be added after ws connect. Exposes `bridge.game` (`LeagueClient`) and `bridge.lcu` (`LCUClient`, `None` when League client not running — out-of-game events disabled with warning). Helpers: `get_phase()`, `get_game_data()`, `is_in_game()`, `close()`. Async callbacks are dispatched as tasks (tracked in `_tasks`, cancelled by `close()`) so a slow handler can't stall the poll loop — they run concurrently, not serialized; sync callbacks still run inline. `close()` also disconnects the websocket and `aclose()`s both httpx clients, and `run()` calls it in a `finally`. Additive — `run_companion()` does not use it.
 - **`MatchTimelineAnalyzer`** ([league/timeline.py](src/league/timeline.py)) — analyzes Riot API `MatchTimeline` for highlight events using composable `Predicate` rules. `get_highlight_events()` → `list[HighlightEvent]`. `ParticipantPositionTrack` provides linear-interpolated position at any timestamp.
@@ -229,21 +232,16 @@ LCU websocket (wss://localhost:<port>, lockfile auth)
 - **`Output`** ([league/ui/output.py](src/league/ui/output.py)) — the console facade; module-level instance `output`. `print()` (routes through `render()`), `json()`, `rule()`, `info/success/warning/error()`, `prompt()`, `status(msg)` (project spinner baked in), `progress(*columns)`. Every CLI command writes through this.
 - **`ProgressReporter`** ([league/reporting.py](src/league/reporting.py)) — `Protocol` with `message()`, `step()`, `advance()`, `task(description, total=None)`. `NullReporter` is the no-op default; `RichProgressReporter` ([league/ui/progress.py](src/league/ui/progress.py)) is the terminal implementation (indeterminate `task` → spinner + elapsed, `total=` → bar + M-of-N). Lets backend code report progress without importing rich.
 - **`MatchRow`** ([league/ui/viewmodels.py](src/league/ui/viewmodels.py)) — presentation-only match view shared by the Riot and LCU match-history commands; `match_table()` shows the Position column only when rows carry one, Game Mode likewise.
-- **`GoveeConnectionListener`** ([govee package](../govee/src/govee/govee.py)) — discovers + manages Govee smart lights over LAN UDP. `listener.devices: dict[str, GoveeDevice]` holds discovered devices by IP. Started before Chroma session; `GOVEE_REQUEST_TIMEOUT` (0.5s) awaited after start for discovery.
+- **`GoveeConnectionListener`** ([govee package](../govee/src/govee/govee.py)) — discovers + manages Govee smart lights over LAN UDP. `listener.devices: dict[str, GoveeDevice]` holds discovered devices by IP. Wrapped by `GoveeLights`, which awaits `govee.request_timeout` (0.5s) after `start()` for discovery.
 
 ### Team → Effect Mapping
 
-Two lookup dicts in `run_companion()` ([league/companion.py](src/league/companion.py)) map `GameTeam` → effect, avoiding if/elif chains:
+Team → colour lookups live next to the thing that owns them, avoiding if/elif chains. Chroma: `Effects.base_for(team)` ([league/companion.py](src/league/companion.py)) maps `ORDER → blue`, `CHAOS → red`, everything else (spectator, unknown) → `white`. Govee: module-level `TEAM_TO_GOVEE_COLOR`, same shape, read by `GoveeLights.set_team()`:
 
 ```python
-team_to_chroma_effect = {
-    GameTeam.ORDER:    effects.blue,
-    GameTeam.CHAOS:    effects.red,
-    GameTeam.SPECTATOR: effects.white,
-}
-team_to_govee_color = {
-    GameTeam.ORDER:    GoveeColor.blue(),
-    GameTeam.CHAOS:    GoveeColor.red(),
+TEAM_TO_GOVEE_COLOR = {
+    GameTeam.ORDER: GoveeColor.blue(),
+    GameTeam.CHAOS: GoveeColor.red(),
     GameTeam.SPECTATOR: GoveeColor.white(),
 }
 ```
@@ -256,9 +254,9 @@ All Chroma effects created at startup via `setup_chroma_effects()` in [league/co
 - **Flash animation**: call `make_flash(ChromaColor.xyz())` — uses `ChromaAnimation.flash_fade()` to build `dict[Optional[GameTeam], ChromaAnimation]` with one animation variant per base color (ORDER/CHAOS/spectator). Add as `dict` field on `Effects`.
   - Optionally pass `steps`, `flash_duration`, `total_fade_duration` to tune (e.g. `first_brick_flash` uses `steps=5, total_fade_duration=0.5`).
   - Dim teammate effects: pass `scale_color(ChromaColor.xyz(), TEAMMATE_DIM_FACTOR)` as color.
-- Trigger flash from callback: `asyncio.create_task(chroma.play_animation(effects.<field>[active_player_team], device))`.
+- Trigger flash from callback: `chroma.flash("<field>", active_player_team)` — `ChromaLighting.flash()` picks the team variant (falling back to the `None` one) and fires `play_animation()` as a task. No-ops when Chroma is disabled.
 - `play_animation()` pre-uploads all frames to Chroma SDK, steps through with baked-in timing. Fades back to team base color automatically — no manual restore needed.
-- Govee in callback: iterate `govee_listener.devices.values()`, call appropriate `set_*` methods. Govee has no animation support — only instant color/brightness/power changes.
+- Govee in callback: `govee.set_team(team)`, or reach into `govee.listener.devices.values()` for other `set_*` methods. Govee has no animation support — only instant color/brightness/power changes.
 
 ### Adding a New Event Handler
 
@@ -360,8 +358,8 @@ Other methods:
 - `chroma` dep is local path ref (`../rzr-chroma`); both repos must be disk siblings. Source at `../rzr-chroma/src/chroma`.
 - `govee` dep is local path ref (`../govee`); must also be disk sibling. Source at `../govee/src/govee`.
 - Live Client API only available during active game. `MatchWatcher` polls every `companion.wait_interval` (2s default) until connected, then every `companion.poll_interval` (0.25s default). No manual restart between games.
-- Govee toggled via `companion.govee_enabled` config key (default `False`). `--no-govee` / `--no-discord` / `--no-chroma` on `featherstorm companion` only *disable* — Govee/Discord still need their config key enabled to turn on.
-- `--no-chroma` skips the `ChromaSession` entirely (`chroma` is `None`, `effects` is `None`); all flash calls go through the `flash(effect_name)` helper in `run_companion()`, which no-ops when `effects is None`.
+- All three companion features resolve through `feature_enabled(flag, key, default=...)` ([league/companion.py](src/league/companion.py)): `--no-govee` / `--no-discord` / `--no-chroma` on `featherstorm companion` only *disable* — the config key (`companion.govee_enabled`, `companion.chroma_enabled`, `discord.enable_rich_presence`) is what turns a feature on.
+- Disabled features are still entered as objects, not `None` — `ChromaLighting` / `GoveeLights` no-op on every method when off, so callbacks have no `if chroma:` guards. Discord is the exception: `open_presence()` yields `None` when off (it wraps a third-party class), and `open_gameflow(presence)` no-ops in turn, so the LCU websocket is only started when presence exists.
 - `riot-root-cert.pem` renamed to `riotgames.pem` but no longer used — `LeagueClient` uses `verify=False`.
 - pypresence `AioPresence.close()` is sync and calls `loop.close()` on the running event loop — never call it. `DiscordRichPresence.close()` ([league/discord/presence.py](src/league/discord/presence.py)) closes the IPC pipe transport directly instead. `run_companion()` closes presence in a `finally` so Ctrl+C doesn't leave an unclosed proactor pipe transport (`ValueError: I/O operation on closed pipe` warning at exit).
 - Spectator mode: `/activeplayer` returns `{"error": "..."}` with HTTP 200 (not 4xx). Both `get_active_player()` and `AllGameData.__post_init__` guard against this, returning `None` for `activePlayer`.

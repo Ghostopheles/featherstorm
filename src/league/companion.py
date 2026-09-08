@@ -27,8 +27,6 @@ from league.ui.renderers import EventFeedContext, format_event_line, FEED_EVENTS
 
 log = logging.getLogger(__name__)
 
-DATA_PATH = config.get("meta.cache_dir")
-
 CHROMA_APP_INFO = {
     "title": "Featherstorm",
     "description": "Compromise is so unsatisfying...",
@@ -39,9 +37,20 @@ CHROMA_APP_INFO = {
     "category": "game",
 }
 
+TEAM_TO_GOVEE_COLOR = {
+    GameTeam.ORDER: GoveeColor.blue(),
+    GameTeam.CHAOS: GoveeColor.red(),
+    GameTeam.SPECTATOR: GoveeColor.white(),
+}
+
 
 def scale_color(color: ChromaColor, factor: float) -> ChromaColor:
     return ChromaColor(int(color.r * factor), int(color.g * factor), int(color.b * factor))
+
+
+def feature_enabled(flag: bool, key: str, *, default: bool) -> bool:
+    """CLI flags can only turn a feature off - the config key is what turns it on."""
+    return flag and config.get_or_set(key, default=default)
 
 
 @dataclass
@@ -55,6 +64,13 @@ class Effects:
     turret_flash: dict  # bright white (my turret kill)
     teammate_turret_flash: dict  # dim white (teammate turret kill)
     first_brick_flash: dict  # short white (my FirstBrick)
+
+    def base_for(self, team: GameTeam | None) -> str:
+        return {GameTeam.ORDER: self.blue, GameTeam.CHAOS: self.red}.get(team, self.white)
+
+    def flash_for(self, name: str, team: GameTeam | None) -> ChromaAnimation:
+        animations = getattr(self, name)
+        return animations.get(team, animations[None])
 
 
 async def setup_chroma_effects(chroma: ChromaSession, device: ChromaDevice) -> Effects:
@@ -88,21 +104,128 @@ async def setup_chroma_effects(chroma: ChromaSession, device: ChromaDevice) -> E
     )
 
 
-async def init_govee() -> GoveeConnectionListener:
-    log.info("Setting up [external_api]govee[/]...")
-    loop = asyncio.get_event_loop()
-    govee_listener = GoveeConnectionListener(loop)
-    govee_listener.start()
+class ChromaLighting:
+    """Razer Chroma keyboard lighting. Every method no-ops when disabled."""
 
-    timeout = config.get_float("govee.request_timeout")
-    await asyncio.sleep(timeout)
+    def __init__(self, enabled: bool, device: ChromaDevice = ChromaDevice.Keyboard):
+        self.enabled = enabled
+        self.device = device
+        self.session: ChromaSession | None = None
+        self.effects: Effects | None = None
+        self._stack = contextlib.AsyncExitStack()
 
-    for dev in govee_listener.devices.values():
-        dev.set_power_state(config.get_bool("govee.default_power_state"))
-        dev.set_brightness(config.get_int("govee.default_brightness"))
-        dev.set_color_and_temperature(GoveeColor.white())
+    async def __aenter__(self) -> "ChromaLighting":
+        if self.enabled:
+            log.info("Setting up [external_api]chroma[/]...")
+            self.session = await self._stack.enter_async_context(ChromaSession(CHROMA_APP_INFO))
+            self.effects = await setup_chroma_effects(self.session, self.device)
 
-    return govee_listener
+        return self
+
+    async def __aexit__(self, *exc_info):
+        await self._stack.aclose()
+        self.session = None
+        self.effects = None
+
+    async def set_team(self, team: GameTeam | None):
+        if self.effects is None:
+            return
+
+        await self.session.set_effect(self.effects.base_for(team))
+
+    def flash(self, name: str, team: GameTeam | None):
+        if self.effects is None:
+            return
+
+        asyncio.create_task(self.session.play_animation(self.effects.flash_for(name, team), self.device))
+
+
+class GoveeLights:
+    """Govee LAN lights. Every method no-ops when disabled."""
+
+    def __init__(self, enabled: bool):
+        self.enabled = enabled
+        self.listener: GoveeConnectionListener | None = None
+
+    async def __aenter__(self) -> "GoveeLights":
+        if not self.enabled:
+            return self
+
+        log.info("Setting up [external_api]govee[/]...")
+        listener = GoveeConnectionListener()
+        listener.start()
+
+        await asyncio.sleep(config.get_float("govee.request_timeout"))
+
+        for dev in listener.devices.values():
+            dev.set_power_state(config.get_bool("govee.default_power_state"))
+            dev.set_brightness(config.get_int("govee.default_brightness"))
+            dev.set_color_and_temperature(GoveeColor.white())
+
+        self.listener = listener
+        return self
+
+    async def __aexit__(self, *exc_info):
+        if self.listener is not None:
+            self.listener.cleanup()
+            self.listener = None
+
+    def set_team(self, team: GameTeam | None):
+        if self.listener is None:
+            return
+
+        color = TEAM_TO_GOVEE_COLOR.get(team, GoveeColor.white())
+        for dev in self.listener.devices.values():
+            dev.set_color_and_temperature(color)
+
+
+@contextlib.asynccontextmanager
+async def open_presence(enabled: bool):
+    if not enabled:
+        yield None
+        return
+
+    log.info("Setting up [external_api]discord[/]...")
+    presence = LeagueRichPresence(config.get_or_set("discord.app_id"))
+    await presence.init()
+    await presence.start_updates()
+
+    try:
+        yield presence
+    finally:
+        await presence.close()
+
+
+@contextlib.asynccontextmanager
+async def open_gameflow(presence: LeagueRichPresence | None):
+    if presence is None:
+        yield None
+        return
+
+    gameflow = LCUGameFlow()
+
+    async def on_lobby_create(event: LCUWebsocketEvent):
+        if isinstance(event.data, list):
+            return
+
+        await presence.init_lobby(event.data)
+
+    async def on_lobby_update(event: LCUWebsocketEvent):
+        await presence.update_lobby(event.data)
+
+    async def on_lobby_delete(event: LCUWebsocketEvent):
+        await presence.init_empty()
+
+    gameflow.add_callback(LCUGameFlowEvent.LobbyCreated, on_lobby_create)
+    gameflow.add_callback(LCUGameFlowEvent.LobbyUpdated, on_lobby_update)
+    gameflow.add_callback(LCUGameFlowEvent.LobbyDeleted, on_lobby_delete)
+
+    await gameflow.start()
+
+    try:
+        yield gameflow
+    finally:
+        await gameflow.lcu.ws.disconnect()
 
 
 def register_event_feed(watcher: MatchWatcher, feed: EventFeedContext):
@@ -115,79 +238,25 @@ def register_event_feed(watcher: MatchWatcher, feed: EventFeedContext):
         watcher.on(event_type, on_event)
 
 
-async def register_gameflow_events(gameflow: LCUGameFlow, presence: LeagueRichPresence | None):
-    if presence is None:
-        return
-
-    async def on_lobby_create(event: LCUWebsocketEvent):
-        if isinstance(event.data, list):
-            return
-
-        await presence.init_lobby(event.data)
-
-    gameflow.add_callback(LCUGameFlowEvent.LobbyCreated, on_lobby_create)
-
-    async def on_lobby_update(event: LCUWebsocketEvent):
-        await presence.update_lobby(event.data)
-
-    gameflow.add_callback(LCUGameFlowEvent.LobbyUpdated, on_lobby_update)
-
-    async def on_lobby_delete(event: LCUWebsocketEvent):
-        await presence.init_empty()
-
-    gameflow.add_callback(LCUGameFlowEvent.LobbyDeleted, on_lobby_delete)
-
-    await gameflow.start()
-
-
 async def run_companion(*, enable_govee: bool = True, enable_discord: bool = True, enable_chroma: bool = True):
-    client = LeagueClient()
-    gameflow = LCUGameFlow()
-
-    govee = None
-    enable_govee = enable_govee and config.get_or_set("companion.govee_enabled", default=False)
-
-    presence = None
-    enable_discord = enable_discord and config.get_or_set("discord.enable_rich_presence", default=True)
-
     log.info("Starting [featherstorm]Featherstorm[/] in companion mode...")
 
-    if enable_govee:
-        govee = await init_govee()
+    client = LeagueClient()
+    watcher = MatchWatcher(client, reporter=RichProgressReporter())
+    feed = EventFeedContext()
 
-    if enable_discord:
-        discord_client_id = config.get_or_set("discord.app_id")
-        presence = LeagueRichPresence(discord_client_id)
-        await presence.init()
-        await presence.start_updates()
-
-    await register_gameflow_events(gameflow, presence)
+    active_player_name = None
+    active_player_team = None
 
     async def get_game_data():
         return await client.get_all_game_data()
 
-    async with contextlib.AsyncExitStack() as stack:
-        chroma = await stack.enter_async_context(ChromaSession(CHROMA_APP_INFO)) if enable_chroma else None
-        device = ChromaDevice.Keyboard
-        effects = await setup_chroma_effects(chroma, device) if chroma else None
-
-        active_player_name = None
-        active_player_team = None
-
-        def flash(effect_name: str):
-            if effects is None:
-                return
-            asyncio.create_task(chroma.play_animation(getattr(effects, effect_name)[active_player_team], device))
-
-        feed = EventFeedContext()
-        player_teams = feed.teams
-        player_champions = feed.champions
-
-        team_to_chroma_effect = {GameTeam.ORDER: effects.blue, GameTeam.CHAOS: effects.red, GameTeam.SPECTATOR: effects.white}
-
-        team_to_govee_color = {GameTeam.ORDER: GoveeColor.blue(), GameTeam.CHAOS: GoveeColor.red(), GameTeam.SPECTATOR: GoveeColor.white()}
-
-        watcher = MatchWatcher(client, reporter=RichProgressReporter())
+    async with (
+        ChromaLighting(feature_enabled(enable_chroma, "companion.chroma_enabled", default=False)) as chroma,
+        GoveeLights(feature_enabled(enable_govee, "companion.govee_enabled", default=False)) as govee,
+        open_presence(feature_enabled(enable_discord, "discord.enable_rich_presence", default=True)) as presence,
+        open_gameflow(presence),
+    ):
 
         async def on_game_start(_: GameEvent):
             nonlocal active_player_name, active_player_team
@@ -197,31 +266,16 @@ async def run_companion(*, enable_govee: bool = True, enable_discord: bool = Tru
 
             all_data = await get_game_data()
             for player in all_data.allPlayers:
-                player_teams[player.riotIdGameName] = player.team
-                player_champions[player.riotIdGameName] = player.championName
+                feed.teams[player.riotIdGameName] = player.team
+                feed.champions[player.riotIdGameName] = player.championName
 
-            player_team = player_teams.get(active_player_name) if active else None
+            active_player_team = feed.teams.get(active_player_name)
 
-            if player_team is None:
-                for player in all_data.allPlayers:
-                    if player.riotIdGameName == active_player_name:
-                        player_team = player.team
-                        break
-
-            active_player_team = player_team
-
-            if effects is not None:
-                effect = team_to_chroma_effect.get(player_team)
-                await chroma.set_effect(effect)
-
-            if govee:
-                # don't forget about govee!
-                for dev in govee.devices.values():
-                    color = team_to_govee_color.get(player_team)
-                    dev.set_color_and_temperature(color)
+            await chroma.set_team(active_player_team)
+            govee.set_team(active_player_team)
 
             if presence is not None:
-                await presence.init_match(all_data, player_teams, player_champions, active_player_name, get_game_data)
+                await presence.init_match(all_data, feed.teams, feed.champions, active_player_name, get_game_data)
 
         async def on_game_end(_: GameEvent):
             if presence is not None:
@@ -230,25 +284,24 @@ async def run_companion(*, enable_govee: bool = True, enable_discord: bool = Tru
         async def on_champion_kill(event: GameEvent):
             killer = event.KillerName
             if killer == active_player_name:
-                flash("kill_flash")
-            elif player_teams.get(killer) == active_player_team:
-                flash("teammate_kill_flash")
+                chroma.flash("kill_flash", active_player_team)
+            elif feed.teams.get(killer) == active_player_team:
+                chroma.flash("teammate_kill_flash", active_player_team)
 
         async def on_turret_killed(event: GameEvent):
             killer = event.KillerName
             if killer == active_player_name:
-                flash("turret_flash")
-            elif player_teams.get(killer) == active_player_team:
-                flash("teammate_turret_flash")
+                chroma.flash("turret_flash", active_player_team)
+            elif feed.teams.get(killer) == active_player_team:
+                chroma.flash("teammate_turret_flash", active_player_team)
 
         async def on_first_brick(event: GameEvent):
             if event.KillerName == active_player_name:
-                flash("first_brick_flash")
+                chroma.flash("first_brick_flash", active_player_team)
 
         async def on_objective_kill(event: GameEvent):
-            killer = event.KillerName
-            if player_teams.get(killer) == active_player_team:
-                flash("objective_flash")
+            if feed.teams.get(event.KillerName) == active_player_team:
+                chroma.flash("objective_flash", active_player_team)
 
         @watcher.on_session_start
         async def on_session_start():
@@ -276,9 +329,4 @@ async def run_companion(*, enable_govee: bool = True, enable_discord: bool = Tru
 
         register_event_feed(watcher, feed)
 
-        try:
-            await watcher.run()
-        finally:
-            if presence is not None:
-                await presence.close()
-            await gameflow.lcu.ws.disconnect()
+        await watcher.run()
