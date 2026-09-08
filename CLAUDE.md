@@ -20,7 +20,7 @@ league-of-snakes/
 │   ├── api.py            # LeagueClient (Live Client API poller)
 │   ├── bridge.py         # LeagueEventBridge + LeagueEvent — unified in-game/out-of-game event hub
 │   ├── cache.py          # DataCache (simple JSON/text file cache under a directory)
-│   ├── companion.py      # run_companion() — async companion mode runner; ChromaLighting/GoveeLights/open_presence/open_gameflow feature context managers
+│   ├── companion.py      # run_companion() — companion mode runner, built on LeagueEventBridge; ChromaLighting/GoveeLights/open_presence feature context managers
 │   ├── markup.py         # Pure markup-string helpers (format_file_path/url/kda/result/duration/player) — no rich, safe for backend messages
 │   ├── reporting.py      # ProgressReporter protocol + NullReporter — backend-facing progress channel
 │   ├── models.py         # GameEvent, ActivePlayer, Player, AllGameData, Match, PlayerMatch, DragonItem, CurrentGameInfo (SPECTATOR-V5)
@@ -105,6 +105,7 @@ Primary (CLI, recommended):
 uv run featherstorm companion [--no-govee] [--no-discord] [--no-chroma]
                                        # Govee via companion.govee_enabled, Chroma via companion.chroma_enabled, Discord presence via discord.enable_rich_presence
                                        # --no-* flags force a feature off for that run (they can't force one on)
+                                       # runs on LeagueEventBridge — needs the League client for lobby/phase events
 uv run featherstorm riot matches ["Name"] ["TAG"] [--count N] [--match-type ranked|normal|tourney|tutorial]
 uv run featherstorm riot match <match_id>
 uv run featherstorm riot timeline <match_id>
@@ -173,7 +174,7 @@ uv run featherstorm cfg reset [--force]
 League Live Client API (127.0.0.1:2999)
         │
         ▼
-  MatchWatcher.run()           ← session lifecycle loop (watcher.py)
+  MatchWatcher.run()           ← session lifecycle loop (watcher.py), owned by the bridge
         │
         ├── _wait_for_session()   ← polls LeagueClientStatus until CONNECTED or timeout
         │
@@ -182,23 +183,28 @@ League Live Client API (127.0.0.1:2999)
                 ▼
         LeagueClient.on_event()  ← builds GameEvent, appends history, fires callbacks (api.py)
                 │
-                ├── companion callbacks registered via watcher.on(...) (companion.py)
-                │      ├── lighting (on_game_start / on_champion_kill / ...)
-                │      ├── console kill-feed (register_event_feed)
-                │      └── Discord presence (init_match on GameStart, end_match on GameEnd)
-                │
-                ├── ChromaSession  (Razer Chroma SDK via chroma package)
-                │
-                └── GoveeConnectionListener  (Govee LAN UDP, if govee_enabled)
+                ▼
+LeagueEventBridge (bridge.py)   ← single event hub, in-game + out-of-game
+        │
+        ├── companion callbacks registered via bridge.on(LeagueEvent.X, ...) (companion.py)
+        │      ├── lighting (on_game_start / on_champion_kill / ...)
+        │      ├── console kill-feed (register_event_feed)
+        │      └── Discord presence (init_match on GameStart, end_match on GameEnd,
+        │                            lobby states via register_presence_lobby_events)
+        │
+        ├── ChromaSession  (Razer Chroma SDK via chroma package)
+        │
+        └── GoveeConnectionListener  (Govee LAN UDP, if govee_enabled)
 
-LCU websocket (wss://localhost:<port>, lockfile auth)
+LCU websocket (wss://localhost:<port>, lockfile auth) — started by LeagueEventBridge.run()
         │
-        ▼
-  LCUGameFlow (gameflow.py) — LobbyCreated/Updated/Deleted events
-        │
-        └── LeagueRichPresence (discord/league_presence.py, if enable_rich_presence)
-               ├── lobby/queue/in-game activity states
-               └── 15s update loop: KDA/CS state line while in game
+        ├── /lol-lobby/v2/lobby          → LeagueEvent.LobbyCreated/Updated/Deleted
+        └── /lol-gameflow/v1/gameflow-phase → LeagueEvent.PhaseChanged
+
+LeagueRichPresence (discord/league_presence.py, if enable_rich_presence)
+        ├── borrows the bridge's LCUClient for lobby/phase reads (no second client)
+        ├── lobby/queue/in-game activity states
+        └── 15s update loop: KDA/CS state line while in game
 ```
 
 ### Key Classes
@@ -220,13 +226,21 @@ LCU websocket (wss://localhost:<port>, lockfile auth)
 - **`LCUWebsocketClient`** ([league/lcu/socket.py](src/league/lcu/socket.py)) — LCU WAMP websocket (`wss://localhost:<port>`, lockfile Basic auth, `verify` off). `on(endpoint, callback, event_type)` registers callbacks; endpoint paths converted to event names (`/lol-lobby/v2/lobby` → `OnJsonApiEvent_lol-lobby_v2_lobby`). Subscribes per registered event on connect (or firehose `OnJsonApiEvent` if none). Auto-reconnects via `websockets.connect` iterator. Callbacks must be registered **before** `connect()` — raises after.
 - **`LCUGameFlow`** ([league/lcu/gameflow.py](src/league/lcu/gameflow.py)) — high-level gameflow wrapper over `LCUClient` + its websocket. `add_callback(LCUGameFlowEvent.LobbyCreated|LobbyUpdated|LobbyDeleted, cb)`, `get_phase()` → `LCUGameflowPhase`, `start()` connects websocket.
 - **`DiscordRichPresence`** ([league/discord/presence.py](src/league/discord/presence.py)) — generic pypresence `AioPresence` wrapper. `DiscordActivity` dataclass holds full activity payload; `set_activity()` / `update_activity(**kwargs)` mutate local state, `update()` pushes to Discord.
-- **`LeagueRichPresence`** ([league/discord/league_presence.py](src/league/discord/league_presence.py)) — League-aware presence. Tracks `SessionStatus` (Empty/InLobby/InQueue/InGame). `init_lobby()` from LCU lobby data (queue description, party size), `init_match()` from `AllGameData` (champion + lane opponent, skin splash as large image, role icon as small image), 15s update loop pushes KDA/CS state. `try_update_queue_type()` resolves queue via Riot SPECTATOR-V5 live match.
+- **`LeagueRichPresence`** ([league/discord/league_presence.py](src/league/discord/league_presence.py)) — League-aware presence. Ctor `LeagueRichPresence(client_id, lcu_client=None)` — pass the bridge's `LCUClient` so presence shares it instead of opening a second one; with no client (and none constructible) `self.gameflow` is `None` and `init()` degrades to `init_empty()` instead of raising. Tracks `SessionStatus` (Empty/InLobby/InQueue/InGame). `init_lobby()` from LCU lobby data (queue description, party size), `init_match()` from `AllGameData` (champion + lane opponent, skin splash as large image, role icon as small image), 15s update loop pushes KDA/CS state. `try_update_queue_type()` resolves queue via Riot SPECTATOR-V5 live match.
 - **`CurrentGameInfo`** ([league/models.py](src/league/models.py)) — SPECTATOR-V5 active-game model (`gameQueueConfigId`, participants, bans).
 - **`Effects`** ([league/companion.py](src/league/companion.py)) — `@dataclass` holding Chroma effect state. Fields: `blue`, `red`, `white` (static base effect IDs), plus flash animation fields (`kill_flash`, `teammate_kill_flash`, `objective_flash`, `turret_flash`, `teammate_turret_flash`, `first_brick_flash`) — each `dict[Optional[GameTeam], ChromaAnimation]` keyed by team so animation fades back to correct base color. `base_for(team)` / `flash_for(name, team)` do the team lookup.
 - **`ChromaLighting`** ([league/companion.py](src/league/companion.py)) — async context manager owning the `ChromaSession`, device and `Effects`. `await set_team(team)` sets the base colour, `flash(name, team)` fires an animation. Constructed with `enabled=False` it enters cleanly and every method no-ops.
 - **`GoveeLights`** ([league/companion.py](src/league/companion.py)) — same shape for Govee: `__aenter__` discovers devices and applies config defaults, `set_team(team)` pushes a colour, `__aexit__` calls `listener.cleanup()`. No-ops when disabled.
 - **`MatchWatcher`** ([league/watcher.py](src/league/watcher.py)) — wraps `LeagueClient`, manages session lifecycle (connect → poll → disconnect → reconnect). Key methods: `watcher.on(event_type, callback)`, `@watcher.on_session_start`, `@watcher.on_session_end`, `await watcher.run()`. Config keys: `companion.max_reconnect_attempts`, `companion.wait_interval`, `companion.poll_interval`, `companion.session_timeout`. Uses `LeagueClientStatus` to decide reconnect vs clean exit. Ctor param `exit_on_timeout` (default `True`): when `False`, `run()` keeps waiting forever instead of exiting after `session_timeout` with no game (used by `LeagueEventBridge`). Ctor param `reporter` (default `NullReporter()`): drives the "waiting for client/match" spinner — `run_companion()` passes a `RichProgressReporter`.
-- **`LeagueEventBridge`** ([league/bridge.py](src/league/bridge.py)) — top-level unified event hub bridging in-game (Live Client API via `MatchWatcher`) and out-of-game (LCU websocket) events. `bridge.on(LeagueEvent.X, cb)` (decorator-or-direct, sync or async), `await bridge.run()`. `LeagueEvent` StrEnum = all `GameEventType` members (payload `GameEvent`) + `LobbyCreated/Updated/Deleted` (payload `LCUWebsocketEvent`) + `PhaseChanged` (payload `LCUGameflowPhase`, via ws endpoint `/lol-gameflow/v1/gameflow-phase`) + `SessionStart`/`SessionEnd` (no args). Registers internal fan-out dispatchers in `__init__` so user callbacks can be added after ws connect. Exposes `bridge.game` (`LeagueClient`) and `bridge.lcu` (`LCUClient`, `None` when League client not running — out-of-game events disabled with warning). Helpers: `get_phase()`, `get_game_data()`, `is_in_game()`, `close()`. Async callbacks are dispatched as tasks (tracked in `_tasks`, cancelled by `close()`) so a slow handler can't stall the poll loop — they run concurrently, not serialized; sync callbacks still run inline. `close()` also disconnects the websocket and `aclose()`s both httpx clients, and `run()` calls it in a `finally`. Additive — `run_companion()` does not use it.
+- **`LeagueEventBridge`** ([league/bridge.py](src/league/bridge.py)) — top-level unified event hub bridging in-game (Live Client API via `MatchWatcher`) and out-of-game (LCU websocket) events. **`run_companion()` is built on it.**
+  - Register: `bridge.on(LeagueEvent.X, cb)` — decorator-or-direct, sync or async. `event` may also be an *iterable* of `LeagueEvent` to wire one callback to several. `bridge.on_game_events(iterable_of_GameEventType, cb)` is the same thing for callers holding `GameEventType` values (e.g. `FEED_EVENTS`). `LeagueEvent.for_game_event(t)` does the single conversion, returning `None` for an unmodelled type.
+  - `LeagueEvent` StrEnum = all `GameEventType` members (payload `GameEvent`) + `LobbyCreated/Updated/Deleted` (payload `LCUWebsocketEvent`) + `PhaseChanged` (payload `LCUGameflowPhase`, via ws endpoint `/lol-gameflow/v1/gameflow-phase`) + `SessionStart`/`SessionEnd` (no args).
+  - Ctor: `LeagueEventBridge(game_client=None, lcu_client=None, *, exit_on_timeout=False, reporter=None)`. `exit_on_timeout` and `reporter` pass straight to the internal `MatchWatcher` — `run_companion()` passes `exit_on_timeout=True` (exit after `companion.session_timeout` with no game) and a `RichProgressReporter` (the "waiting for client/match" spinner).
+  - Registers internal fan-out dispatchers in `__init__` so user callbacks can be added after ws connect. `SessionStart` calls `game.reset()` before firing, so callers don't have to.
+  - Exposes `bridge.game` (`LeagueClient`) and `bridge.lcu` (`LCUClient`, `None` when League client not running — out-of-game events disabled with warning).
+  - Helpers: `get_phase()`, `get_lobby()`, `get_game_data()`, `get_active_player()`, `get_active_player_team()`, `is_in_game()`, `emit_current_phase()` (fires `PhaseChanged` for the phase the client is *already* in — the websocket only pushes transitions), `close()`.
+  - Async callbacks are dispatched as tasks (tracked in `_tasks`, cancelled by `close()`) so a slow handler can't stall the poll loop — they run concurrently, not serialized; sync callbacks still run inline.
+  - `close()` is idempotent, disconnects the websocket (the bridge always starts it in `run()`) and `aclose()`s the httpx clients — but only closes `bridge.lcu` when the bridge created it, so an *injected* client outlives the bridge. `run()` calls `close()` in a `finally`.
 - **`MatchTimelineAnalyzer`** ([league/timeline.py](src/league/timeline.py)) — analyzes Riot API `MatchTimeline` for highlight events using composable `Predicate` rules. `get_highlight_events()` → `list[HighlightEvent]`. `ParticipantPositionTrack` provides linear-interpolated position at any timestamp.
 - **`Predicate[T]`** ([league/predicates.py](src/league/predicates.py)) — composable boolean predicate wrapping a `T → bool` function. Supports `&`, `|`, `~` operators. `@rule` decorator registers named factories. `load_rule_from_config(path)` / `load_rule_from_dict(config)` build predicates from JSON config.
 - **`Output`** ([league/ui/output.py](src/league/ui/output.py)) — the console facade; module-level instance `output`. `print()` (routes through `render()`), `json()`, `rule()`, `info/success/warning/error()`, `prompt()`, `status(msg)` (project spinner baked in), `progress(*columns)`. Every CLI command writes through this.
@@ -260,8 +274,9 @@ All Chroma effects created at startup via `setup_chroma_effects()` in [league/co
 
 ### Adding a New Event Handler
 
-- Add event to `GameEventType` in [league/enums.py](league/enums.py) if missing. Value must be exact string Live Client API returns.
-- Register a callback via `watcher.on(GameEventType.<New>, cb)` in `run_companion` ([league/companion.py](src/league/companion.py)) for lighting. For console kill-feed output, add a `case` to `describe_event()` and the event to `FEED_EVENTS` ([league/ui/renderers/events.py](src/league/ui/renderers/events.py)) — `register_event_feed` in companion wires every member of `FEED_EVENTS` to one callback.
+- Add event to `GameEventType` in [league/enums/base.py](src/league/enums/base.py) if missing. Value must be exact string Live Client API returns.
+- Add a matching member to `LeagueEvent` ([league/bridge.py](src/league/bridge.py)) with the **same value** — the bridge logs a warning at construction for any `GameEventType` without one, and never dispatches it.
+- Register a callback via `bridge.on(LeagueEvent.<New>, cb)` in `run_companion` ([league/companion.py](src/league/companion.py)) for lighting. For console kill-feed output, add a `case` to `describe_event()` and the event to `FEED_EVENTS` ([league/ui/renderers/events.py](src/league/ui/renderers/events.py)) — `register_event_feed` in companion wires every member of `FEED_EVENTS` to one callback via `bridge.on_game_events()`.
 
 ## Rendering Layer
 
@@ -359,7 +374,8 @@ Other methods:
 - `govee` dep is local path ref (`../govee`); must also be disk sibling. Source at `../govee/src/govee`.
 - Live Client API only available during active game. `MatchWatcher` polls every `companion.wait_interval` (2s default) until connected, then every `companion.poll_interval` (0.25s default). No manual restart between games.
 - All three companion features resolve through `feature_enabled(flag, key, default=...)` ([league/companion.py](src/league/companion.py)): `--no-govee` / `--no-discord` / `--no-chroma` on `featherstorm companion` only *disable* — the config key (`companion.govee_enabled`, `companion.chroma_enabled`, `discord.enable_rich_presence`) is what turns a feature on.
-- Disabled features are still entered as objects, not `None` — `ChromaLighting` / `GoveeLights` no-op on every method when off, so callbacks have no `if chroma:` guards. Discord is the exception: `open_presence()` yields `None` when off (it wraps a third-party class), and `open_gameflow(presence)` no-ops in turn, so the LCU websocket is only started when presence exists.
+- Disabled features are still entered as objects, not `None` — `ChromaLighting` / `GoveeLights` no-op on every method when off, so callbacks have no `if chroma:` guards. Discord is the exception: `open_presence()` yields `None` when off (it wraps a third-party class), so lobby-presence callbacks are only wired when it exists.
+- The LCU websocket is now started by `LeagueEventBridge.run()` regardless of whether Discord presence is on — it used to be started only alongside presence. Costs one websocket plus a Data Dragon `initialize()` on startup.
 - `riot-root-cert.pem` renamed to `riotgames.pem` but no longer used — `LeagueClient` uses `verify=False`.
 - pypresence `AioPresence.close()` is sync and calls `loop.close()` on the running event loop — never call it. `DiscordRichPresence.close()` ([league/discord/presence.py](src/league/discord/presence.py)) closes the IPC pipe transport directly instead. `run_companion()` closes presence in a `finally` so Ctrl+C doesn't leave an unclosed proactor pipe transport (`ValueError: I/O operation on closed pipe` warning at exit).
 - Spectator mode: `/activeplayer` returns `{"error": "..."}` with HTTP 200 (not 4xx). Both `get_active_player()` and `AllGameData.__post_init__` guard against this, returning `None` for `activePlayer`.
@@ -374,8 +390,8 @@ Other methods:
 - `RiotAPIClient.get_match()` re-raises the underlying `httpx.HTTPStatusError` rather than handing `None` to pydantic, so callers can read the status code. Everything else on `BaseAPIClient` still returns `None` on HTTP error.
 - `DataDragon._make_champion_lookup()` stores `by-id` keys as **strings**. `get_champion_name()` / `get_champion()` index with `str(championID)`, and the JSON cache round-trip stringifies them anyway — int keys silently broke every lookup on the run that first built the cache.
 - Upgrading Data Dragon version in `dragon.py`: test `get_item()` against a few items (e.g. `1001` Boots, `1054` Doran's Blade) — new CDN response fields cause `TypeError` on construction since `DragonItem` uses `**data` unpacking.
-- LCU websocket callbacks must be registered **before** `connect()` — `LCUWebsocketClient.on()` raises once the listen task exists. `run_companion()` therefore calls `register_gameflow_events()` before starting the watcher.
-- The LCU sends a **list** payload for some `/lol-lobby/v2/lobby` transitions — guard `isinstance(event.data, list)` before treating it as a lobby dict (`LeagueEventBridge` filters these out of its lobby dispatch; `run_companion`'s `on_lobby_create` guards directly).
+- LCU websocket callbacks must be registered **before** `connect()` — `LCUWebsocketClient.on()` raises once the listen task exists. `LeagueEventBridge.__init__` therefore registers its own internal dispatchers up front and fans out to user callbacks itself, so `bridge.on(...)` is safe at any time.
+- The LCU sends a **list** payload for some `/lol-lobby/v2/lobby` transitions — `LeagueEventBridge` filters these out of its lobby dispatch, so bridge lobby callbacks don't need their own `isinstance(event.data, list)` guard.
 - `data/help.json` is a dump of the LCU `/help` endpoint — 976 entries under `events`, the authoritative list of every `OnJsonApiEvent` the client emits. Use it instead of guessing endpoint names.
 - LCU websocket event names derive from endpoint paths: slashes → underscores, prefixed `OnJsonApiEvent` (e.g. `/lol-lobby/v2/lobby` → `OnJsonApiEvent_lol-lobby_v2_lobby`).
 - `LCUWebsocketClient.on()` with `type=None` never fires: `_on_message` matches `handler.event_type == event.eventType` exactly. Always pass an explicit `LCUWebsocketEventType`.

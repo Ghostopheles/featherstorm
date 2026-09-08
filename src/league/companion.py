@@ -16,13 +16,12 @@ from chroma import (
 from govee import GoveeConnectionListener, GoveeColor
 
 from league import config
-from league.api import LeagueClient
-from league.watcher import MatchWatcher
+from league.lcu import LCUClient
+from league.models import GameTeam, GameEvent
 from league.discord import LeagueRichPresence
 from league.lcu.socket import LCUWebsocketEvent
-from league.lcu.gameflow import LCUGameFlow, LCUGameFlowEvent
-from league.models import GameEventType, GameTeam, GameEvent
 from league.ui import output, RichProgressReporter
+from league.bridge import LeagueEventBridge, LeagueEvent
 from league.ui.renderers import EventFeedContext, format_event_line, FEED_EVENTS
 
 log = logging.getLogger(__name__)
@@ -180,13 +179,13 @@ class GoveeLights:
 
 
 @contextlib.asynccontextmanager
-async def open_presence(enabled: bool):
+async def open_presence(enabled: bool, lcu_client: LCUClient | None = None):
     if not enabled:
         yield None
         return
 
     log.info("Setting up [external_api]discord[/]...")
-    presence = LeagueRichPresence(config.get_or_set("discord.app_id"))
+    presence = LeagueRichPresence(config.get_or_set("discord.app_id"), lcu_client)
     await presence.init()
     await presence.start_updates()
 
@@ -196,18 +195,17 @@ async def open_presence(enabled: bool):
         await presence.close()
 
 
-@contextlib.asynccontextmanager
-async def open_gameflow(presence: LeagueRichPresence | None):
-    if presence is None:
-        yield None
-        return
+def register_event_feed(bridge: LeagueEventBridge, feed: EventFeedContext):
+    def on_event(event: GameEvent):
+        line = format_event_line(event, feed)
+        if line:
+            output.print(line)
 
-    gameflow = LCUGameFlow()
+    bridge.on_game_events(FEED_EVENTS, on_event)
 
+
+def register_presence_lobby_events(bridge: LeagueEventBridge, presence: LeagueRichPresence):
     async def on_lobby_create(event: LCUWebsocketEvent):
-        if isinstance(event.data, list):
-            return
-
         await presence.init_lobby(event.data)
 
     async def on_lobby_update(event: LCUWebsocketEvent):
@@ -216,55 +214,33 @@ async def open_gameflow(presence: LeagueRichPresence | None):
     async def on_lobby_delete(event: LCUWebsocketEvent):
         await presence.init_empty()
 
-    gameflow.add_callback(LCUGameFlowEvent.LobbyCreated, on_lobby_create)
-    gameflow.add_callback(LCUGameFlowEvent.LobbyUpdated, on_lobby_update)
-    gameflow.add_callback(LCUGameFlowEvent.LobbyDeleted, on_lobby_delete)
-
-    await gameflow.start()
-
-    try:
-        yield gameflow
-    finally:
-        await gameflow.lcu.ws.disconnect()
-
-
-def register_event_feed(watcher: MatchWatcher, feed: EventFeedContext):
-    def on_event(event: GameEvent):
-        line = format_event_line(event, feed)
-        if line:
-            output.print(line)
-
-    for event_type in FEED_EVENTS:
-        watcher.on(event_type, on_event)
+    bridge.on(LeagueEvent.LobbyCreated, on_lobby_create)
+    bridge.on(LeagueEvent.LobbyUpdated, on_lobby_update)
+    bridge.on(LeagueEvent.LobbyDeleted, on_lobby_delete)
 
 
 async def run_companion(*, enable_govee: bool = True, enable_discord: bool = True, enable_chroma: bool = True):
     log.info("Starting [featherstorm]Featherstorm[/] in companion mode...")
 
-    client = LeagueClient()
-    watcher = MatchWatcher(client, reporter=RichProgressReporter())
+    bridge = LeagueEventBridge(exit_on_timeout=True, reporter=RichProgressReporter())
     feed = EventFeedContext()
 
     active_player_name = None
     active_player_team = None
 
-    async def get_game_data():
-        return await client.get_all_game_data()
-
     async with (
         ChromaLighting(feature_enabled(enable_chroma, "companion.chroma_enabled", default=False)) as chroma,
         GoveeLights(feature_enabled(enable_govee, "companion.govee_enabled", default=False)) as govee,
-        open_presence(feature_enabled(enable_discord, "discord.enable_rich_presence", default=True)) as presence,
-        open_gameflow(presence),
+        open_presence(feature_enabled(enable_discord, "discord.enable_rich_presence", default=True), bridge.lcu) as presence,
     ):
 
         async def on_game_start(_: GameEvent):
             nonlocal active_player_name, active_player_team
 
-            active = await client.get_active_player()
+            active = await bridge.get_active_player()
             active_player_name = active.riotIdGameName if active else config.get_str("companion.default_player_name")
 
-            all_data = await get_game_data()
+            all_data = await bridge.get_game_data()
             for player in all_data.allPlayers:
                 feed.teams[player.riotIdGameName] = player.team
                 feed.champions[player.riotIdGameName] = player.championName
@@ -275,7 +251,7 @@ async def run_companion(*, enable_govee: bool = True, enable_discord: bool = Tru
             govee.set_team(active_player_team)
 
             if presence is not None:
-                await presence.init_match(all_data, feed.teams, feed.champions, active_player_name, get_game_data)
+                await presence.init_match(all_data, feed.teams, feed.champions, active_player_name, bridge.get_game_data)
 
         async def on_game_end(_: GameEvent):
             if presence is not None:
@@ -303,30 +279,31 @@ async def run_companion(*, enable_govee: bool = True, enable_discord: bool = Tru
             if feed.teams.get(event.KillerName) == active_player_team:
                 chroma.flash("objective_flash", active_player_team)
 
-        @watcher.on_session_start
+        @bridge.on(LeagueEvent.SessionStart)
         async def on_session_start():
             nonlocal active_player_name, active_player_team
-            client.reset()
             active_player_name = None
             active_player_team = None
             feed.clear()
 
             log.info("League session started")
 
-        @watcher.on_session_end
+        @bridge.on(LeagueEvent.SessionEnd)
         async def on_session_end():
             log.info("League session ended.")
 
-        watcher.on(GameEventType.GameStart, on_game_start)
-        watcher.on(GameEventType.GameEnd, on_game_end)
-        watcher.on(GameEventType.ChampionKill, on_champion_kill)
-        watcher.on(GameEventType.TurretKilled, on_turret_killed)
-        watcher.on(GameEventType.FirstBrick, on_first_brick)
-        watcher.on(GameEventType.HordeKill, on_objective_kill)
-        watcher.on(GameEventType.HeraldKill, on_objective_kill)
-        watcher.on(GameEventType.BaronKill, on_objective_kill)
-        watcher.on(GameEventType.DragonKill, on_objective_kill)
+        bridge.on(LeagueEvent.GameStart, on_game_start)
+        bridge.on(LeagueEvent.GameEnd, on_game_end)
+        bridge.on(LeagueEvent.ChampionKill, on_champion_kill)
+        bridge.on(LeagueEvent.TurretKilled, on_turret_killed)
+        bridge.on(LeagueEvent.FirstBrick, on_first_brick)
+        bridge.on(
+            (LeagueEvent.HordeKill, LeagueEvent.HeraldKill, LeagueEvent.BaronKill, LeagueEvent.DragonKill),
+            on_objective_kill,
+        )
 
-        register_event_feed(watcher, feed)
+        register_event_feed(bridge, feed)
+        if presence is not None:
+            register_presence_lobby_events(bridge, presence)
 
-        await watcher.run()
+        await bridge.run()

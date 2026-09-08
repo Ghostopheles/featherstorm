@@ -1,11 +1,13 @@
 import os
 import time
 import asyncio
+import logging
 
 from enum import Enum
 from typing import Callable
 
 from league.enums import Queue
+from league.lcu import LCUClient
 from league.dragon import DataDragon
 from league.riot_api import RiotAPIClient
 from league.enums.queues import QUEUE_DESCRIPTION
@@ -13,10 +15,13 @@ from league.lcu.gameflow import LCUGameFlow, LCUGameflowPhase
 from league.models import AllGameData, Scores, GameTeam, CurrentGameInfo
 from league.discord import DiscordRichPresence, DiscordActivity, ActivityType
 
+log = logging.getLogger(__name__)
+
 MAX_PARTY_SIZE = 5
 UPDATE_INTERVAL = 15.0
 
 ASSETS_BASE_URL = "https://ghst.tools/media/featherstorm/assets"
+
 
 class SessionStatus(Enum):
     Empty = 1
@@ -40,7 +45,7 @@ class LeagueRichPresence:
     _update_task: asyncio.Task | None = None
     _get_game_data: Callable | None = None
 
-    def __init__(self, client_id: str):
+    def __init__(self, client_id: str, lcu_client: LCUClient | None = None):
         self.presence = DiscordRichPresence(client_id)
         self.dragon = DataDragon()
         self._update_task = None
@@ -49,8 +54,15 @@ class LeagueRichPresence:
         if riot_api_key is not None:
             self.riot = RiotAPIClient(riot_api_key)
 
-        self.gameflow = LCUGameFlow()
-        self.lcu = self.gameflow.lcu
+        # presence only needs the LCU for lobby/phase reads - a caller that already owns a client
+        # (the event bridge) passes it in so we don't open a second one
+        self.lcu = lcu_client
+        try:
+            self.gameflow = LCUGameFlow(lcu_client)
+            self.lcu = self.gameflow.lcu
+        except Exception:
+            log.warning("League client not running - presence will start in its empty state")
+            self.gameflow = None
 
     async def _update_loop(self):
         while True:
@@ -70,6 +82,10 @@ class LeagueRichPresence:
             self._update_task = None
 
     async def init(self):
+        if self.gameflow is None:
+            await self.init_empty()
+            return
+
         phase = await self.gameflow.get_phase()
         match phase:
             case LCUGameflowPhase.Home:
@@ -280,7 +296,7 @@ class LeagueRichPresence:
         return self.format_tile_url(champion_name.lower(), skin_id)
 
     def get_image_url_for_position(self, position: str) -> str:
-            return f"{ASSETS_BASE_URL}/roles/{position.lower()}.png"
+        return f"{ASSETS_BASE_URL}/roles/{position.lower()}.png"
 
     def get_game_mode_string(self, game_data: AllGameData) -> str:
         game_mode = game_data.gameData.gameMode
