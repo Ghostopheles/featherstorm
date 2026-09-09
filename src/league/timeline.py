@@ -7,6 +7,7 @@ from league.models import (
     TimelineEvent,
     MatchTimeline,
     PositionDto,
+    ParticipantFrameDto,
 )
 from league.predicates import rule, Predicate
 
@@ -160,6 +161,44 @@ class MatchTimelineAnalyzer:
                 )
             )
         return highlights
+
+@dataclass
+class MatchupTimelineFrame:
+    player: ParticipantFrameDto
+    opponent: ParticipantFrameDto
+    events: list[TimelineEvent]
+
+class MatchupTimeline:
+    def __init__(self, timeline: MatchTimeline, playerParticipantID: int, opponentParticipantID: int):
+        self.timeline = timeline
+        self.playerParticipantID = playerParticipantID
+        self.opponentParticipantID = opponentParticipantID
+
+        self.event_rules = [
+            event_caused_by_participant(self.playerParticipantID) | event_assisted_by_participant(self.playerParticipantID) | event_victim_is_participant(self.playerParticipantID) |
+            event_caused_by_participant(self.opponentParticipantID) | event_assisted_by_participant(self.opponentParticipantID) | event_victim_is_participant(self.opponentParticipantID)
+        ]
+
+    def __is_event_relevant(self, event: TimelineEvent) -> bool:
+        for rule in self.event_rules:
+            if rule(event):
+                return True
+
+        return False
+
+    def get_frames(self) -> list[MatchupTimelineFrame]:
+        frames = []
+        for timeline_frame in self.timeline.info.frames:
+            frame = MatchupTimelineFrame(
+                player=timeline_frame.participantFrames.get(str(self.playerParticipantID)),
+                opponent=timeline_frame.participantFrames.get(str(self.opponentParticipantID)),
+                events=[
+                    event for event in timeline_frame.events if self.__is_event_relevant(event)
+                ]
+            )
+            frames.append(frame)
+
+        return frames
 
 
 @dataclass
