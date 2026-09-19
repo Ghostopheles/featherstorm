@@ -16,8 +16,8 @@ DEFAULT_CONFIG = {
     "govee": {"default_power_state": True, "default_brightness": 100, "request_timeout": 0.5},
     "chroma": {"teammate_dim_factor": 0.4},
     "companion": {
-        "default_player_name": "Dallas N Tollway",
-        "default_player_tagline": "uwu",
+        "default_player_name": "",
+        "default_player_tagline": "",
         "govee_enabled": False,
         "chroma_enabled": False,
         "wait_interval": 2.0,

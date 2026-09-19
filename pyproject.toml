@@ -1,7 +1,7 @@
 [project]
 name = "featherstorm"
 version = "0.1.0"
-description = "A League of Legends companion terminal app."
+description = "League of Legends companion toolkit: event-driven RGB lighting, Discord presence, highlight capture, a match crawler and a desktop app."
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [

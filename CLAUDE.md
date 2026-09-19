@@ -1,6 +1,6 @@
-# League of Snakes
+# Featherstorm
 
-Python app monitors League of Legends via Live Client API, drives RGB on Razer Chroma + Govee smart lights from in-game events.
+Async Python League of Legends companion toolkit. Bridges Live Client API, LCU (REST + websocket), Riot Web API and Data Dragon into: Razer Chroma + Govee lighting driven by in-game events, Discord Rich Presence, highlight clip capture, a SurrealDB-backed match crawler, and the Bladecaller PySide6 desktop app.
 
 **Personal project. Works for me only. No code quality enforcement, refactors, or abstractions unless asked.**
 
@@ -18,16 +18,15 @@ Detailed docs live in [docs/](docs/) — split by module to keep this file short
 ## Project Structure
 
 ```
-league-of-snakes/
-├── main.py               # Legacy entry point (direct run, always enables Govee)
-├── lcu_main.py           # Scratch script: LCU lobby creation test
-├── riot_main.py          # Scratch script: Riot API test
-├── justfile              # Recipes: `just run` / `just lcu` / `just riot` (PowerShell on Windows)
-├── riotgames.pem         # SSL cert (no longer used — LeagueClient uses verify=False)
+featherstorm/
 ├── pyproject.toml        # Project metadata and dependencies (uv)
+├── docker-compose.yml    # SurrealDB server for the crawler (port 16800, data in ./data/surreal)
 ├── .env                  # RIOT_API_KEY (not committed)
 ├── logs/                 # Log output directory (created at runtime)
 ├── docs/                 # Domain-specific docs (see links above)
+├── scripts/
+│   ├── generate_enums.py    # Generates enum modules from Riot static JSON
+│   └── champion_winrates.py # Example crawler-dataset consumer (champion winrate/playrate)
 ├── src/league/
 │   ├── api.py            # LeagueClient (Live Client API poller)
 │   ├── bridge.py         # LeagueEventBridge + LeagueEvent — unified in-game/out-of-game event hub
@@ -95,8 +94,8 @@ league-of-snakes/
 │       ├── socket.py     # LCUWebsocketClient (LCU WAMP websocket, OnJsonApiEvent subscriptions)
 │       ├── gameflow.py   # LCUGameFlow + LCUGameFlowEvent (lobby created/updated/deleted via websocket, gameflow phase)
 │       └── exceptions.py # LCU replay exceptions
-├── data/                 # Sample JSON snapshots for development/testing
-└── ref/                  # Reference JSON snapshots + Featherstorm.html (UI design mockup)
+├── data/                 # Local only (gitignored): sample JSON snapshots, cache, SurrealDB volume
+└── ref/                  # Local only (gitignored): reference JSON snapshots + Featherstorm.html (UI design mockup)
 ```
 
 ## Tech Stack
@@ -155,9 +154,9 @@ uv sync --extra ui
 uv run bladecaller
 ```
 
-Legacy (direct, always enables Govee):
+Crawler database:
 ```bash
-uv run main.py
+docker compose up -d
 ```
 
 League must run for Live Client API (`https://127.0.0.1:2999`) to be reachable. App waits + reconnects automatically — no manual restart between games.

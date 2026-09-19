@@ -20,4 +20,3 @@ ref/
 .claude/settings.local.json
 .omc
 todo.md
-docker-compose.yml

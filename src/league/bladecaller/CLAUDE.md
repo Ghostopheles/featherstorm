@@ -26,7 +26,6 @@ bladecaller/
 ├── controllers/     # page ↔ backend wiring
 │   ├── client_status.py    # ClientStatusController — polls LCU gameflow phase, emits ClientStatus
 │   └── match_history.py    # MatchHistoryController — LCU match list + Riot per-match expansion
-├── qt/              # (empty)
 ├── resources/
 │   ├── __init__.py  # load_stylesheet(), load_fonts(), load_icon(), icon_path(), app_version()
 │   ├── theme.py     # design tokens (colors, fonts, radii) — single source of truth

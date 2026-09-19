@@ -542,7 +542,7 @@ class LCUInventoryItem:
 
 
 class LCUGameflowPhase(StrEnum):
-    Home = "None"  # TODO: help
+    Home = "None"  # LCU reports the literal string "None" when idle in the client
     Lobby = "Lobby"
     Matchmaking = "Matchmaking"
     ReadyCheck = "ReadyCheck"

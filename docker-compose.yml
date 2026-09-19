@@ -1,0 +1,8 @@
+services:
+  surrealdb:
+    image: surrealdb/surrealdb:latest
+    command: start --user root --pass root rocksdb://data/surreal.db
+    ports:
+      - 16800:8000
+    volumes:
+      - ./data/surreal:/data
