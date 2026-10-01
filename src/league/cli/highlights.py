@@ -10,6 +10,7 @@ from league import config
 from league.markup import format_file_path
 from league.highlights import HighlightManager
 from league.ui import output, RichProgressReporter
+from league.ui.renderers.highlights import highlight_pick_table
 from league.enums import QueueChoice, resolve_queue
 
 from league.cli._shared import try_get_cfg_or_input
@@ -27,6 +28,7 @@ def capture_highlights(
     tagline: Optional[str] = config.get("companion.default_player_tagline"),
     count: Optional[int] = 2,
     queue_type: Annotated[QueueChoice, typer.Option(help="Queue Type", case_sensitive=False)] = None,
+    pick: Annotated[bool, typer.Option("--pick", help="List highlights and choose one to capture (ignores --count)")] = False,
 ):
     load_dotenv()
     api_key = os.getenv("RIOT_API_KEY")
@@ -58,6 +60,22 @@ def capture_highlights(
         reporter = RichProgressReporter(prefix=REPORTER_PREFIX)
         highlights = await HighlightManager.create(name, tagline, game_path, export_path, api_key, reporter)
         last_match_id = await highlights.get_last_match_id(queue_type)
-        await highlights.capture_highlights_for_match(last_match_id, numHighlights=count)
+        if not pick:
+            await highlights.capture_highlights_for_match(last_match_id, numHighlights=count)
+            return
+
+        events = await highlights.get_highlight_events(last_match_id)
+        events.sort(key=lambda e: e.timestamp)
+        if not events:
+            output.warning("No highlights found for this match")
+            return
+
+        output.print(highlight_pick_table(events))
+        choice = 0
+        while not 1 <= choice <= len(events):
+            answer = output.prompt(f"Pick a highlight (1-{len(events)})").strip()
+            choice = int(answer) if answer.isdigit() else 0
+
+        await highlights.capture_highlights_for_match(last_match_id, events=[events[choice - 1]], index_offset=choice - 1)
 
     asyncio.run(run())

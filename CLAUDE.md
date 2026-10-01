@@ -132,7 +132,8 @@ uv run featherstorm riot timeline <match_id>
 uv run featherstorm riot puuid ["Name"] ["TAG"]
 uv run featherstorm riot ranked <solo|tft|flex> <tier> <division>
 uv run featherstorm riot live-game ["Name"] ["TAG"]   # currently ongoing match (SPECTATOR-V5)
-uv run featherstorm highlights capture [--game-path P] [--export-path P] [--name N] [--tagline T] [--count N]
+uv run featherstorm highlights capture [--game-path P] [--export-path P] [--name N] [--tagline T] [--count N] [--pick]
+                                  # --pick lists highlights (time + killed champs), captures the one you choose
 uv run featherstorm crawler crawl [--count N] [--days N | --since YYYY-MM-DD --until YYYY-MM-DD | --all-time]
                                   [--queue ...] [--match-type ...] [--max-depth N] [--reset]
 uv run featherstorm crawler fetch [--count N] [--max-depth N] [--workers N]

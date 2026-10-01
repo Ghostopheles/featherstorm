@@ -20,3 +20,4 @@ ref/
 .claude/settings.local.json
 .omc
 todo.md
+*.txt

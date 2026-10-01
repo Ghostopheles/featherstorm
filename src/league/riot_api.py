@@ -206,9 +206,9 @@ class RiotAPIClient(BaseAPIClient):
         self,
         puuid: str,
         count: int = 3,
-        match_type: MatchType = MatchType.Normal,
+        match_type: MatchType = MatchType.Ranked,
         queue_type: Optional[Queue] = None,
-    ) -> list[PlayerMatch]:
+    ) -> list[PlayerMatch] | None:
         match_ids = await self.get_match_ids(puuid, count=count, match_type=match_type, queue_type=queue_type)
         if not match_ids:
             return None

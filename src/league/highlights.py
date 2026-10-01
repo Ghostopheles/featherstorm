@@ -125,7 +125,7 @@ class HighlightManager:
     async def get_recent_matches(
         self,
         count: int = 10,
-        match_type: Optional[MatchType] = MatchType.Normal,
+        match_type: Optional[MatchType] = None,
         queue_type: Optional[Queue] = None,
     ) -> list[PlayerMatch]:
         if self.__matches is None:
@@ -182,13 +182,21 @@ class HighlightManager:
         analyzer = MatchTimelineAnalyzer(playerParticipantID, timeline)
         return analyzer.get_all_events()
 
-    async def capture_highlights_for_match(self, matchID: str, numHighlights: int = 5):
-        self.reporter.message(f"Capturing {numHighlights} highlight(s) for match [highlights_match_id]{matchID}[/]")
+    async def capture_highlights_for_match(
+        self,
+        matchID: str,
+        numHighlights: int = 5,
+        events: Optional[list[HighlightEvent]] = None,
+        index_offset: int = 0,
+    ):
+        count = len(events) if events is not None else numHighlights
+        self.reporter.message(f"Capturing {count} highlight(s) for match [highlights_match_id]{matchID}[/]")
 
         with self.reporter.task():
-            self.reporter.step("Fetching highlight events...")
-            events = await self.get_highlight_events(matchID)
-            events.sort(key=lambda x: x.timestamp)  # sort by the start time
+            if events is None:
+                self.reporter.step("Fetching highlight events...")
+                events = await self.get_highlight_events(matchID)
+                events.sort(key=lambda x: x.timestamp)  # sort by the start time
 
             self.reporter.step("Fetching match data...")
             match = await self.get_match(matchID)
@@ -199,7 +207,7 @@ class HighlightManager:
                 return
             await self.wait_for_replay_ready()
         try:
-            await self.record(events, numHighlights)
+            await self.record(events, numHighlights, index_offset)
         except KeyboardInterrupt, asyncio.CancelledError:
             self.reporter.message("[warning]Cancelled[/] - pausing replay and ending recording...")
             try:
@@ -361,7 +369,7 @@ class HighlightManager:
         res = await self.http.post(REPLAY_API_URL + "/recording", json={"recording": False})
         res.raise_for_status()
 
-    async def record(self, events: list[HighlightEvent], numHighlights: int = None):
+    async def record(self, events: list[HighlightEvent], numHighlights: int = None, index_offset: int = 0):
         self.pid = await self.get_replay_pid()
 
         await self.pause()
@@ -374,7 +382,7 @@ class HighlightManager:
             if numHighlights is not None and i >= numHighlights:
                 break
 
-            idx = i + 1
+            idx = i + 1 + index_offset
             self.reporter.message(f"Capturing highlight [highlights_match_id]{idx}[/]...")
 
             timestamp = batch.timestamp
