@@ -64,6 +64,10 @@ class LeagueRichPresence:
             log.warning("League client not running - presence will start in its empty state")
             self.gameflow = None
 
+    @staticmethod
+    def _sanitize_champion_name(name: str) -> str:
+        return name.replace("'", "")
+
     async def _update_loop(self):
         while True:
             try:
@@ -145,6 +149,8 @@ class LeagueRichPresence:
         # opgg_url = f"https://op.gg/lol/summoners/na/{urlsafe_riot_name}/ingame"
 
         champion = player_champions.get(game_data.activePlayer.riotIdGameName)
+        champion = self._sanitize_champion_name(champion)
+
         skin_id = active_player.skinID
         opponent = self.get_lane_opponent(game_data)
         details = f"Playing {champion}"

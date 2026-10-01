@@ -82,8 +82,7 @@ class DataDragon(BaseAPIClient):
 
         for name, entry in data.items():
             key = int(entry["key"])
-            # str keys, because the lookups below index with str(championID) and a
-            # JSON round-trip through the cache stringifies them anyway
+            # id is a string because json woohoo
             lookup["by-id"][str(key)] = name
             lookup["by-name"][name] = key
 
@@ -156,7 +155,7 @@ class DataDragon(BaseAPIClient):
         return res.content
 
     async def get_champion_skins(self, champion_name: str) -> list[dict]:
-        champion_id = await self.get_champion_id(champion_name.title())
+        champion_id = await self.get_champion_id(champion_name)
         champion = await self.get_champion(champion_id)
         skins = champion.get("skins")
         return skins
