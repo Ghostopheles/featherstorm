@@ -239,6 +239,9 @@ async def run_companion(*, enable_govee: bool = True, enable_discord: bool = Tru
 
             active = await bridge.get_active_player()
             active_player_name = active.riotIdGameName if active else config.get_str("companion.default_player_name")
+            if active_player_name is None:
+                log.warning("No active player found, and no default player name set.")
+                return
 
             all_data = await bridge.get_game_data()
             for player in all_data.allPlayers:
@@ -259,25 +262,30 @@ async def run_companion(*, enable_govee: bool = True, enable_discord: bool = Tru
 
         async def on_champion_kill(event: GameEvent):
             killer = event.KillerName
-            if killer == active_player_name:
-                chroma.flash("kill_flash", active_player_team)
-            elif feed.teams.get(killer) == active_player_team:
-                chroma.flash("teammate_kill_flash", active_player_team)
+            if killer:
+                if killer == active_player_name:
+                    chroma.flash("kill_flash", active_player_team)
+                elif feed.teams.get(killer) == active_player_team:
+                    chroma.flash("teammate_kill_flash", active_player_team)
 
         async def on_turret_killed(event: GameEvent):
             killer = event.KillerName
-            if killer == active_player_name:
-                chroma.flash("turret_flash", active_player_team)
-            elif feed.teams.get(killer) == active_player_team:
-                chroma.flash("teammate_turret_flash", active_player_team)
+            if killer:
+                if killer == active_player_name:
+                    chroma.flash("turret_flash", active_player_team)
+                elif feed.teams.get(killer) == active_player_team:
+                    chroma.flash("teammate_turret_flash", active_player_team)
 
         async def on_first_brick(event: GameEvent):
-            if event.KillerName == active_player_name:
+            killer = event.KillerName
+            if killer == active_player_name:
                 chroma.flash("first_brick_flash", active_player_team)
 
         async def on_objective_kill(event: GameEvent):
-            if feed.teams.get(event.KillerName) == active_player_team:
-                chroma.flash("objective_flash", active_player_team)
+            killer = event.KillerName
+            if killer:
+                if feed.teams.get(killer) == active_player_team:
+                    chroma.flash("objective_flash", active_player_team)
 
         @bridge.on(LeagueEvent.SessionStart)
         async def on_session_start():
