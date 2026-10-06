@@ -16,7 +16,9 @@ Currently it will:
 - Print notable game events to the console
 
 #### Discord Rich Presence
-This will change your current activity on Discord to show your currently active match, including the following:
+<img width="306" height="141" alt="image" src="https://github.com/user-attachments/assets/80c9b0be-a195-4708-97c8-85edc2441872" />
+
+Changes your current activity on Discord to show your currently active match, including the following:
 - Queue type (ranked solo, practice, ARAM, etc.)
 - Champion name and skin
 - Enemy lane opponent champion
