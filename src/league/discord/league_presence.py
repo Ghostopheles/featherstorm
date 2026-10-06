@@ -22,6 +22,9 @@ UPDATE_INTERVAL = 15.0
 
 ASSETS_BASE_URL = "https://ghst.tools/media/featherstorm/assets"
 
+CHAMPION_NAME_REPLACEMENTS = {
+    "Renata Glasc": "Renata"
+}
 
 class SessionStatus(Enum):
     Empty = 1
@@ -66,6 +69,9 @@ class LeagueRichPresence:
 
     @staticmethod
     def _sanitize_champion_name(name: str) -> str:
+        if translated := CHAMPION_NAME_REPLACEMENTS.get(name, None):
+            return translated
+
         return name.replace("'", "")
 
     async def _update_loop(self):
