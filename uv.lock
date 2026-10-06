@@ -226,13 +226,10 @@ wheels = [
 [[package]]
 name = "chroma"
 version = "0.1.0"
-source = { editable = "../rzr-chroma" }
+source = { git = "https://github.com/Ghostopheles/razer-chroma#7c81a1a590ce2d0609d5a3159cc3d119248f593d" }
 dependencies = [
     { name = "httpx", extra = ["http2"] },
 ]
-
-[package.metadata]
-requires-dist = [{ name = "httpx", extras = ["http2"], specifier = ">=0.28.1" }]
 
 [[package]]
 name = "click"
@@ -304,9 +301,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "chroma", marker = "extra == 'chroma'", editable = "../rzr-chroma" },
+    { name = "chroma", marker = "extra == 'chroma'", git = "https://github.com/Ghostopheles/razer-chroma" },
     { name = "featherstorm", extras = ["chroma", "govee"], marker = "extra == 'lighting'", editable = "." },
-    { name = "govee", marker = "extra == 'govee'", editable = "../govee" },
+    { name = "govee", marker = "extra == 'govee'", git = "https://github.com/Ghostopheles/govee" },
     { name = "httpx", extras = ["http2"], specifier = ">=0.28.1" },
     { name = "pillow", specifier = ">=12.2.0" },
     { name = "pydantic", specifier = ">=2.12.5" },
@@ -374,21 +371,7 @@ wheels = [
 [[package]]
 name = "govee"
 version = "0.1.0"
-source = { editable = "../govee" }
-
-[package.metadata]
-requires-dist = [
-    { name = "rich", marker = "extra == 'cli'", specifier = ">=15.0.0" },
-    { name = "typer", marker = "extra == 'cli'", specifier = ">=0.25.1" },
-]
-provides-extras = ["cli"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=8" },
-    { name = "pytest-asyncio", specifier = ">=0.24" },
-    { name = "ruff", specifier = ">=0.15.14" },
-]
+source = { git = "https://github.com/Ghostopheles/govee#42102132c025ee4df1046e361be983b5e84de7cd" }
 
 [[package]]
 name = "h11"

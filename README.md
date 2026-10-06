@@ -12,9 +12,11 @@ A League of Legends companion CLI tool.
 
 Currently it will:
 - Enable Discord Rich Presence (see below)
-- Enable Razer Chroma lighting (if installed)
-- Enable Govee light controls (if installed)
+- Enable Razer Chroma lighting (if installed and enabled)
+- Enable Govee light controls (if installed and enabled)
 - Print notable game events to the console
+
+For lighting to work, you need to install Featherstorm with the optional `[lighting]` group.
 
 #### Discord Rich Presence
 <img width="306" height="141" alt="image" src="https://github.com/user-attachments/assets/80c9b0be-a195-4708-97c8-85edc2441872" />

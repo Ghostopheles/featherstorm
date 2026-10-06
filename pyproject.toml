@@ -47,8 +47,8 @@ build-backend = "uv_build"
 module-name = "league"
 
 [tool.uv.sources]
-chroma = { path = "../rzr-chroma", editable = true }
-govee = { path = "../govee", editable = true }
+chroma = { git = "https://github.com/Ghostopheles/razer-chroma" }
+govee = { git = "https://github.com/Ghostopheles/govee" }
 featherstorm = { workspace = true }
 
 [dependency-groups]
