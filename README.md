@@ -106,7 +106,7 @@ If you decide to use the match crawler (I don't recommend it), you'll need to us
 > [!DANGER]
 > The default container configuration exposes the match database on **all** network interfaces and has horrendously insecure login credentials. Just so you're aware.
 >
-> It also has a hardcoded data volume path. Probably change that if you care.
+> It also has hardcoded data volume and database paths. Probably change these if you care.
 
 ## AI Usage
 Parts of this project were written by Claude Code, but *most* of the code remains human-written.
