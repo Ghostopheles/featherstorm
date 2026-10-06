@@ -138,8 +138,9 @@ uv run featherstorm riot timeline <match_id>
 uv run featherstorm riot puuid ["Name"] ["TAG"]
 uv run featherstorm riot ranked <solo|tft|flex> <tier> <division>
 uv run featherstorm riot live-game ["Name"] ["TAG"]   # currently ongoing match (SPECTATOR-V5)
-uv run featherstorm highlights capture [--game-path P] [--export-path P] [--name N] [--tagline T] [--count N] [--pick]
+uv run featherstorm highlights capture [match_id] [--game-path P] [--export-path P] [--name N] [--tagline T] [--count N] [--pick]
                                   # --pick lists highlights (time + killed champs), captures the one you choose
+                                  # match_id optional (NA1_123 or bare 123, defaults to last match; --queue-type ignored when given)
 uv run featherstorm replay status|download|open [match_id]   # match_id optional (defaults to last LCU match); open has --wait/--no-wait
 uv run featherstorm replay playback|pause|resume|toggle|render|hide-ui
 uv run featherstorm replay seek <time>                 # 90, 1:30, 1m30s, or relative +30 / -10 / -1m
