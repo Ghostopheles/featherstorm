@@ -2,7 +2,8 @@
 
 A League of Legends companion CLI tool.
 
-Features a (hopefully) simple config system for toggling certain behaviors or features.
+> [!WARNING]
+> This is a personal project and is not configured to be generally installable and runnable without making changes. If you'd still like to try, be sure to read the "Usage" section carefully.
 
 ## Modules
 
@@ -11,8 +12,8 @@ Features a (hopefully) simple config system for toggling certain behaviors or fe
 
 Currently it will:
 - Enable Discord Rich Presence (see below)
-- Enable Razer Chroma lighting
-- Enable Govee light controls
+- Enable Razer Chroma lighting (if installed)
+- Enable Govee light controls (if installed)
 - Print notable game events to the console
 
 #### Discord Rich Presence
@@ -72,3 +73,27 @@ Allows you to fetch:
 - Item info by ID
 - Champion info by ID
 - Champion splash art by champion name
+
+## Usage
+
+### Installation
+First off, you need [uv](https://docs.astral.sh/uv/getting-started/installation/). Technically this isn't required, but who uses `pip` these days anyways?
+
+Once you have [uv](https://docs.astral.sh/uv/getting-started/installation/), you can install Featherstorm with the following command:
+```
+uv tool install "featherstorm @ git+https://github.com/Ghostopheles/featherstorm"
+```
+or, you can clone the repository locally, and use `uv run` to run without installing globally.
+
+### Configuration
+You can set configuration values using `featherstorm cfg set`. For example, you can change your summoner name with `featherstorm cfg set companion default_player_name MySuperCoolSummonerName`.
+
+Using this system, you'll want to change the following default config values:
+- `meta.cache_dir`: Point this to the folder that Featherstorm should use for caching data.
+- `lcu.client_install_path`: Point this to your League of Legends installation, required for League Client API functionality.
+- `highlights.export_path`: Export path for auto-captured highlights.
+- `discord.app_id`: Change this to your own Discord application ID. Used for rich presence.
+- `companion.default_player_name`: Your summoner name.
+- `companion.default_player_tagline`: Your summoner tagline (the thing after the #).
+
+You can view your current configuration with `featherstorm cfg view`.
