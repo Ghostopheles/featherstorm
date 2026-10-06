@@ -150,12 +150,14 @@ class LeagueRichPresence:
 
         champion = player_champions.get(game_data.activePlayer.riotIdGameName)
         champion = self._sanitize_champion_name(champion)
+        champion_display_name = await self.dragon.get_champion_display_name(champion)
 
         skin_id = active_player.skinID
         opponent = self.get_lane_opponent(game_data)
-        details = f"Playing {champion}"
+        details = f"Playing {champion_display_name}"
         if opponent is not None:
-            details += f" vs. {opponent}"
+            opponent_display_name = await self.dragon.get_champion_display_name(opponent)
+            details += f" vs. {opponent_display_name}"
 
         large_image = await self.get_image_url_for_skin(champion, skin_id)
         large_text = active_player.skinName

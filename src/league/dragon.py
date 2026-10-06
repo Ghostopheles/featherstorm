@@ -159,3 +159,8 @@ class DataDragon(BaseAPIClient):
         champion = await self.get_champion(champion_id)
         skins = champion.get("skins")
         return skins
+
+    async def get_champion_display_name(self, champion_name: str) -> str:
+        champion_id = await self.get_champion_id(champion_name)
+        champion = await self.get_champion(champion_id)
+        return champion.get("name")
