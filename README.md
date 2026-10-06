@@ -103,10 +103,10 @@ You can view your current configuration with `featherstorm cfg view`.
 ### Docker
 If you decide to use the match crawler (I don't recommend it), you'll need to use [Docker](https://docs.docker.com/engine/install/) and run `docker compose up` in the repo to set up the match database container.
 
-> [!DANGER]
-> The default container configuration exposes the match database on **all** network interfaces and has horrendously insecure login credentials. Just so you're aware.
+>[!DANGER]
+>The default container configuration exposes the match database on **all** network interfaces and has horrendously insecure login credentials. Just so you're aware.
 >
-> It also has hardcoded data volume and database paths. Probably change these if you care.
+>It also has hardcoded data volume and database paths. Probably change these if you care.
 
 ## AI Usage
 Parts of this project were written by Claude Code, but *most* of the code remains human-written.
