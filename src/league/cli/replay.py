@@ -4,11 +4,13 @@ import typer
 import asyncio
 
 from pathlib import Path
-from typing import Optional, Annotated
+from typing import Optional, Annotated, TYPE_CHECKING
 
 from league.ui import output
-from league.replay import ReplayManager, ReplayAPIClient
-from league.lcu.exceptions import LCUMissingReplayMetadataException, LCUIncompatibleReplayException
+from league.replay import ReplayAPIClient
+
+if TYPE_CHECKING:
+    from league.replay import ReplayManager
 
 from league.cli._shared import default_client_path
 
@@ -38,6 +40,10 @@ def _parse_time(value: str) -> float:
 
 
 def _run_manager(client_install_path: Path, func):
+    # imported here so Replay API-only commands skip the LCU/DataDragon import chain
+    from league.replay import ReplayManager
+    from league.lcu.exceptions import LCUMissingReplayMetadataException, LCUIncompatibleReplayException
+
     async def run():
         async with ReplayManager(client_install_path) as manager:
             try:

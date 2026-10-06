@@ -65,7 +65,7 @@ featherstorm/
 │   │   └── match_fetcher.py # MatchFetcher + FetchConfig — downloads and stores full match payloads
 │   ├── cli/              # Typer CLI package — primary entry point (featherstorm)
 │   │   ├── __init__.py   # runs config.init(), re-exports `app` (keeps league.cli:app entry point)
-│   │   ├── main.py       # root app: callback + `companion` command, add_typer each group
+│   │   ├── main.py       # root app: callback + `companion` command; registers only the subcommand group in argv[1] (all groups for --help) to keep startup fast
 │   │   ├── _shared.py    # try_get_cfg_or_input(), default_client_path, _riot_client()
 │   │   ├── lcu.py        # lcu_app (+ nested champ-select, lobby, inventory, gameflow apps)
 │   │   ├── cfg.py        # cfg_app
