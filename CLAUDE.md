@@ -109,8 +109,8 @@ featherstorm/
 - **Python 3.14** — required minimum (per `pyproject.toml`)
 - **uv** — package manager (`uv run`, `uv add`, etc.)
 - **httpx[http2]** — async HTTP client for all API calls
-- **chroma** — local sibling package at `../rzr-chroma` (Razer Chroma SDK wrapper)
-- **govee** — local sibling package at `../govee` (Govee LAN UDP controller)
+- **chroma** — local sibling package at `../rzr-chroma` (Razer Chroma SDK wrapper; optional `chroma`/`lighting` extra)
+- **govee** — local sibling package at `../govee` (Govee LAN UDP controller; optional `govee`/`lighting` extra)
 - **python-dotenv** — loads `.env` for Riot API key
 - **pydantic** — used for `Match`, `PlayerMatch` models in `models.py`
 - **toml** — reads/writes `config.py` TOML file
@@ -125,6 +125,8 @@ featherstorm/
 - **qasync** — unifies the Qt and asyncio event loops in the UI (optional `ui` extra)
 
 ## Running
+
+Local dev: `uv sync --all-extras` — plain `uv sync` drops the optional `ui`/`chroma`/`govee` extras.
 
 Primary (CLI, recommended):
 ```bash

@@ -5,8 +5,6 @@ description = "League of Legends companion toolkit: event-driven RGB lighting, D
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "chroma",
-    "govee",
     "httpx[http2]>=0.28.1",
     "pillow>=12.2.0",
     "pydantic>=2.12.5",
@@ -31,6 +29,15 @@ ui = [
     "pyside6>=6.11.1",
     "qasync>=0.28.0",
 ]
+chroma = [
+    "chroma",
+]
+govee = [
+    "govee",
+]
+lighting = [
+    "featherstorm[chroma,govee]",
+]
 
 [build-system]
 requires = ["uv_build==0.11.7"]
@@ -42,6 +49,7 @@ module-name = "league"
 [tool.uv.sources]
 chroma = { path = "../rzr-chroma", editable = true }
 govee = { path = "../govee", editable = true }
+featherstorm = { workspace = true }
 
 [dependency-groups]
 dev = [

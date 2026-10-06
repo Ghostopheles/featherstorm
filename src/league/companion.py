@@ -4,17 +4,6 @@ import contextlib
 
 from dataclasses import dataclass
 
-from chroma import (
-    ChromaSession,
-    ChromaEffect,
-    ChromaEffectType,
-    ChromaColor,
-    ChromaDevice,
-    ChromaAnimation,
-)
-
-from govee import GoveeConnectionListener, GoveeColor
-
 from league import config
 from league.lcu import LCUClient
 from league.models import GameTeam, GameEvent
@@ -26,6 +15,27 @@ from league.ui.renderers import EventFeedContext, format_event_line, FEED_EVENTS
 
 log = logging.getLogger(__name__)
 
+try:
+    from chroma import (
+        ChromaSession,
+        ChromaEffect,
+        ChromaEffectType,
+        ChromaColor,
+        ChromaDevice,
+        ChromaAnimation,
+    )
+
+    HAS_CHROMA = True
+except ImportError:
+    HAS_CHROMA = False
+
+try:
+    from govee import GoveeConnectionListener, GoveeColor
+
+    HAS_GOVEE = True
+except ImportError:
+    HAS_GOVEE = False
+
 CHROMA_APP_INFO = {
     "title": "Featherstorm",
     "description": "Compromise is so unsatisfying...",
@@ -34,12 +44,6 @@ CHROMA_APP_INFO = {
         "keyboard",
     ],
     "category": "game",
-}
-
-TEAM_TO_GOVEE_COLOR = {
-    GameTeam.ORDER: GoveeColor.blue(),
-    GameTeam.CHAOS: GoveeColor.red(),
-    GameTeam.SPECTATOR: GoveeColor.white(),
 }
 
 
@@ -106,9 +110,15 @@ async def setup_chroma_effects(chroma: ChromaSession, device: ChromaDevice) -> E
 class ChromaLighting:
     """Razer Chroma keyboard lighting. Every method no-ops when disabled."""
 
-    def __init__(self, enabled: bool, device: ChromaDevice = ChromaDevice.Keyboard):
+    def __init__(self, enabled: bool, device: ChromaDevice | None = None):
+        if enabled and not HAS_CHROMA:
+            log.warning("Chroma lighting is enabled but the [external_api]chroma[/] package isn't installed - skipping")
+            enabled = False
+
         self.enabled = enabled
         self.device = device
+        if enabled and device is None:
+            self.device = ChromaDevice.Keyboard
         self.session: ChromaSession | None = None
         self.effects: Effects | None = None
         self._stack = contextlib.AsyncExitStack()
@@ -143,6 +153,10 @@ class GoveeLights:
     """Govee LAN lights. Every method no-ops when disabled."""
 
     def __init__(self, enabled: bool):
+        if enabled and not HAS_GOVEE:
+            log.warning("Govee lighting is enabled but the [external_api]govee[/] package isn't installed - skipping")
+            enabled = False
+
         self.enabled = enabled
         self.listener: GoveeConnectionListener | None = None
 
@@ -173,7 +187,7 @@ class GoveeLights:
         if self.listener is None:
             return
 
-        color = TEAM_TO_GOVEE_COLOR.get(team, GoveeColor.white())
+        color = {GameTeam.ORDER: GoveeColor.blue(), GameTeam.CHAOS: GoveeColor.red()}.get(team, GoveeColor.white())
         for dev in self.listener.devices.values():
             dev.set_color_and_temperature(color)
 

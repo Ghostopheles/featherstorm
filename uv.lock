@@ -266,8 +266,6 @@ name = "featherstorm"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "chroma" },
-    { name = "govee" },
     { name = "httpx", extra = ["http2"] },
     { name = "pillow" },
     { name = "pydantic" },
@@ -282,6 +280,16 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+chroma = [
+    { name = "chroma" },
+]
+govee = [
+    { name = "govee" },
+]
+lighting = [
+    { name = "chroma" },
+    { name = "govee" },
+]
 ui = [
     { name = "pyside6" },
     { name = "qasync" },
@@ -296,8 +304,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "chroma", editable = "../rzr-chroma" },
-    { name = "govee", editable = "../govee" },
+    { name = "chroma", marker = "extra == 'chroma'", editable = "../rzr-chroma" },
+    { name = "featherstorm", extras = ["chroma", "govee"], marker = "extra == 'lighting'", editable = "." },
+    { name = "govee", marker = "extra == 'govee'", editable = "../govee" },
     { name = "httpx", extras = ["http2"], specifier = ">=0.28.1" },
     { name = "pillow", specifier = ">=12.2.0" },
     { name = "pydantic", specifier = ">=2.12.5" },
@@ -312,7 +321,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.24.1" },
     { name = "websockets", specifier = ">=16.0" },
 ]
-provides-extras = ["ui"]
+provides-extras = ["ui", "chroma", "govee", "lighting"]
 
 [package.metadata.requires-dev]
 dev = [
