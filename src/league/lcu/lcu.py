@@ -1,5 +1,4 @@
 import httpx
-import asyncio
 import logging
 
 from pathlib import Path
@@ -12,7 +11,6 @@ from league.dragon import DataDragon
 from league.http import BaseAPIClient
 
 from league.lcu.socket import LCUWebsocketClient, LCUWebsocketEventCallback
-from league.lcu.exceptions import LCUMissingReplayMetadataException, LCUIncompatibleReplayException
 
 log = logging.getLogger(__name__)
 
@@ -203,64 +201,6 @@ class LCUClient(BaseAPIClient):
     async def get_player_participant_id(self, matchID: int) -> int:
         game = await self.get_match(matchID)
         return game.participantIdentities[0].participantId
-
-    async def download_replay(self, matchID: int):
-        async def start_download(matchID: int):
-            return await self.post(f"/lol-replays/v1/rofls/{matchID}/download/graceful", json={"gameId": matchID}, no_json=True)
-
-        async def check_download(matchID: int) -> LCUReplayDownloadStatus:
-            progress = await self.get_replay_metadata(matchID)
-            state = progress.get("state")
-            match state:
-                case LCUReplayState.Watch:
-                    return LCUReplayDownloadStatus.Success
-                case LCUReplayState.Retry:
-                    return LCUReplayDownloadStatus.Retry
-                case _:
-                    return LCUReplayDownloadStatus.Downloading
-
-        download_state = LCUReplayDownloadStatus.NotStarted
-        res = await start_download(matchID)
-        log.debug(f"replay download start status: {res.status_code}")
-        for _ in range(10):
-            download_state = await check_download(matchID)
-            match download_state:
-                case LCUReplayDownloadStatus.Success:
-                    break
-                case LCUReplayDownloadStatus.Failed:
-                    raise LCUIncompatibleReplayException(matchID=matchID)
-                case LCUReplayDownloadStatus.Downloading:
-                    await asyncio.sleep(1)
-                case LCUReplayDownloadStatus.NotStarted | LCUReplayDownloadStatus.Retry:
-                    start_res = await start_download(matchID)
-                    log.debug(f"replay download retry status: {start_res.status_code}")
-                case _:
-                    log.debug(f"replay download state: {download_state}")
-                    break
-
-        return download_state
-
-    async def launch_replay(self, matchID: int):
-        metadata = await self.get_replay_metadata(matchID)
-
-        if metadata is None:
-            await self.create_replay_metadata(matchID)
-            metadata = await self.get_replay_metadata(matchID)
-
-        if metadata is None:
-            raise LCUMissingReplayMetadataException(matchID=matchID)
-
-        if metadata.get("state") != LCUReplayState.Watch:
-            success = await self.download_replay(matchID)
-            log.debug(f"replay download success: {success}")
-
-        return await self.post(f"/lol-replays/v1/rofls/{matchID}/watch", json={"gameId": matchID})
-
-    async def create_replay_metadata(self, matchID: int):
-        return await self.post(f"/lol-replays/v2/metadata/{matchID}/create")
-
-    async def get_replay_metadata(self, matchID: int):
-        return await self.get(f"/lol-replays/v1/metadata/{matchID}")
 
     def get_position_for_lane_and_role(self, lane: LCULane, role: LCURole) -> LCUPosition:
         try:

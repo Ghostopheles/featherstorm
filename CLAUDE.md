@@ -10,6 +10,7 @@ Detailed docs live in [docs/](docs/) — split by module to keep this file short
 - [docs/config.md](docs/config.md) — full TOML config key reference + `featherstorm cfg` CLI
 - [docs/rendering.md](docs/rendering.md) — terminal UI layer rules (`league/ui/`), renderer/progress-reporter conventions
 - [docs/lcu.md](docs/lcu.md) — `LCUClient` (League client UI API via lockfile), CLI commands
+- [docs/replay.md](docs/replay.md) — `ReplayManager` / `ReplayAPIClient` (replay download/launch via LCU, in-replay control via Replay API), CLI commands
 - [docs/govee.md](docs/govee.md) — Govee LAN UDP smart-light integration
 - [docs/riot-api.md](docs/riot-api.md) — `RiotAPIClient` (MATCH-V5, rate limiting), external API table
 - [docs/quirks.md](docs/quirks.md) — known gotchas/workarounds across the whole app (read before debugging anything weird)
@@ -50,7 +51,11 @@ featherstorm/
 │   ├── predicates.py     # Predicate[T] composable predicate system (@rule decorator, &/|/~ operators)
 │   ├── riot_api.py       # RiotAPIClient (PUUID, matches, summoner, ranked data, live match via SPECTATOR-V5)
 │   ├── timeline.py       # MatchTimelineAnalyzer, HighlightEvent, ParticipantPositionTrack (Riot API match timeline → highlights) — analysis only, no rendering
-│   ├── highlights.py     # HighlightManager (replay download, open replay client, OBS-style recording of clip ranges)
+│   ├── highlights.py     # HighlightManager (picks highlight events, records clip ranges through ReplayManager, ffmpeg compression)
+│   ├── replay/           # Replay handling (see docs/replay.md)
+│   │   ├── __init__.py   # re-exports ReplayManager, ReplayAPIClient, normalize_match_id
+│   │   ├── api.py        # ReplayAPIClient — in-game Replay API (127.0.0.1:2999/replay): playback, render/camera, recording, sequences, waiters
+│   │   └── manager.py    # ReplayManager — LCU replay metadata/download/open + close running replay; owns a ReplayAPIClient
 │   ├── watcher.py        # MatchWatcher (session lifecycle, reconnect logic, event routing)
 │   ├── crawler/          # Match crawler (SurrealDB-backed BFS over the summoner↔match graph + match dataset)
 │   │   ├── __init__.py   # re-exports CrawlerDatabase, MatchCrawler, MatchFetcher, configs, CrawlStats
@@ -66,6 +71,7 @@ featherstorm/
 │   │   ├── cfg.py        # cfg_app
 │   │   ├── riot.py       # riot_app (matches, match, timeline, puuid, ranked, live-game)
 │   │   ├── highlights.py # highlights_app
+│   │   ├── replay.py     # replay_app (status, download, open, playback, pause, resume, seek, speed, hide-ui, follow, render, record start/stop/status)
 │   │   ├── crawler.py    # crawler_app (crawl, fetch, dataset, stats, export, schema, reset)
 │   │   └── dragon.py     # dragon_app (item, champion, art)
 │   ├── ui/               # Terminal rendering layer — the only place that writes to the console
@@ -89,7 +95,7 @@ featherstorm/
 │   │   ├── presence.py         # DiscordRichPresence, DiscordActivity — generic pypresence wrapper
 │   │   └── league_presence.py  # LeagueRichPresence — League-aware presence (lobby/in-game status, KDA, skin art, role icon)
 │   └── lcu/
-│       ├── lcu.py        # LCUClient (lockfile auth, champ-select, lobby, match history, replays, inventory, gameflow endpoints)
+│       ├── lcu.py        # LCUClient (lockfile auth, champ-select, lobby, match history, inventory, gameflow endpoints)
 │       ├── models.py     # MyChampSelection, Summoner, LobbyGameMode, LobbyType, LCUGameflowPhase, LCUTimeline*, LCUMatch*
 │       ├── socket.py     # LCUWebsocketClient (LCU WAMP websocket, OnJsonApiEvent subscriptions)
 │       ├── gameflow.py   # LCUGameFlow + LCUGameFlowEvent (lobby created/updated/deleted via websocket, gameflow phase)
@@ -134,6 +140,12 @@ uv run featherstorm riot ranked <solo|tft|flex> <tier> <division>
 uv run featherstorm riot live-game ["Name"] ["TAG"]   # currently ongoing match (SPECTATOR-V5)
 uv run featherstorm highlights capture [--game-path P] [--export-path P] [--name N] [--tagline T] [--count N] [--pick]
                                   # --pick lists highlights (time + killed champs), captures the one you choose
+uv run featherstorm replay status|download|open [match_id]   # match_id optional (defaults to last LCU match); open has --wait/--no-wait
+uv run featherstorm replay playback|pause|resume|render|hide-ui
+uv run featherstorm replay seek <time>                 # 90, 1:30, 1m30s
+uv run featherstorm replay speed <x>
+uv run featherstorm replay follow <riot_id_game_name>
+uv run featherstorm replay record start [out] [--start T] [--end T | -d/--duration D] [--wait] | record stop | record status
 uv run featherstorm crawler crawl [--count N] [--days N | --since YYYY-MM-DD --until YYYY-MM-DD | --all-time]
                                   [--queue ...] [--match-type ...] [--max-depth N] [--reset]
 uv run featherstorm crawler fetch [--count N] [--max-depth N] [--workers N]
@@ -187,6 +199,10 @@ Pages: **Dashboard** (Recent Matches card) and **Match History** (paged, filtera
 ## LCU Client
 
 `LCUClient` talks to League client UI API via local lockfile. Full method list + CLI: [docs/lcu.md](docs/lcu.md).
+
+## Replays
+
+`ReplayManager` (`league.replay`) owns all replay interaction: LCU `/lol-replays` metadata/download/launch plus the in-game Replay API via `ReplayAPIClient`. `HighlightManager` builds on it. Details + CLI: [docs/replay.md](docs/replay.md).
 
 ## Govee Integration
 

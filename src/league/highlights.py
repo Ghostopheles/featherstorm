@@ -1,6 +1,3 @@
-import os
-import httpx
-import signal
 import asyncio
 
 from pathlib import Path
@@ -9,29 +6,22 @@ from typing import Optional
 import league.config as cfg
 
 from league.lcu.lcu import LCUClient, LCUMatch
-from league.lcu.exceptions import LCUMissingReplayMetadataException
+from league.lcu.exceptions import LCUMissingReplayMetadataException, LCUIncompatibleReplayException
 from league.models import PlayerMatch, TimelineEvent, MatchTimeline
 from league.enums import MatchType, Queue
 from league.timeline import MatchTimelineAnalyzer, HighlightEvent
 from league.riot_api import RiotAPIClient
 from league.markup import format_file_path
+from league.replay import ReplayManager
 from league.reporting import ProgressReporter, NullReporter
 
-LAUNCH_POLL_INTERVAL = 1
-LAUNCH_TIMEOUT = 60
 CLIP_DURATION = 15  # seconds
 GAME_CLIENT_NAME = "League of Legends.exe"
-DEFAULT_SEEK_BUFFER = 0  # seconds to seek before the event timestamp to account for loading times
-DEFAULT_CAMERA_FOV = 60
 
 REALITY_CHECK_BUFFER = 5
 
 LEAD_BUFFER = 7  # seconds
 TRAIL_BUFFER = 7  # seconds
-
-CAMERA_SELECTION_OFFSET = {"x": 0, "y": 2200, "z": -1400}
-
-REPLAY_API_URL = "https://127.0.0.1:2999/replay"
 
 
 class HighlightManager:
@@ -39,11 +29,10 @@ class HighlightManager:
     cache_path: Path
 
     lcu: LCUClient | None = None
+    replay: ReplayManager | None = None
 
     riot: RiotAPIClient | None = None
     puuid: str | None = None
-
-    http: httpx.AsyncClient | None = None
 
     cfg: dict | None = None
 
@@ -80,17 +69,12 @@ class HighlightManager:
         self.riot = RiotAPIClient(api_key)
         self.puuid = await self.riot.get_puuid(name, tag)
 
-    def __init_http(self):
-        if self.http is not None:
-            return
-
-        self.http = httpx.AsyncClient(http2=True, timeout=httpx.Timeout(10.0, read=300.0), verify=False)
-
     def __init_lcu(self):
         if self.lcu is not None:
             return
 
         self.lcu = LCUClient(self.game_path.parent.parent)
+        self.replay = ReplayManager(self.game_path.parent.parent, lcu=self.lcu, reporter=self.reporter)
 
     def __init_cfg(self):
         if self.cfg is not None:
@@ -100,7 +84,6 @@ class HighlightManager:
 
     async def __init(self, *args, **kwargs):
         await self.__init_api(*args, **kwargs)
-        self.__init_http()
         self.__init_lcu()
         self.__init_cfg()
 
@@ -205,177 +188,34 @@ class HighlightManager:
             self.reporter.step("Opening replay file...")
             if not await self.open_replay(matchID):
                 return
-            await self.wait_for_replay_ready()
+            await self.replay.api.wait_until_ready()
         try:
             await self.record(events, numHighlights, index_offset)
         except KeyboardInterrupt, asyncio.CancelledError:
             self.reporter.message("[warning]Cancelled[/] - pausing replay and ending recording...")
             try:
-                await self.pause()
-                await self.stop_recording()
+                await self.replay.api.pause()
+                await self.replay.api.stop_recording()
             except Exception:
                 pass
             raise
 
-    async def wait_for(self, func):
-        deadline = asyncio.get_event_loop().time() + LAUNCH_TIMEOUT
-        while asyncio.get_event_loop().time() < deadline:
-            try:
-                if await func():
-                    return
-            except httpx.ConnectError:
-                self.reporter.message("Failed to connect to replay API")
-                pass
-            await asyncio.sleep(LAUNCH_POLL_INTERVAL)
-        raise TimeoutError("Waiting timeout")
-
-    async def wait_for_replay_ready(self):
-        async def check():
-            res = await self.http.get(REPLAY_API_URL + "/playback")
-            return res.is_success
-
-        return await self.wait_for(check)
-
-    async def wait_for_seek(self):
-        async def check():
-            res = await self.http.get(REPLAY_API_URL + "/playback")
-            return res.json().get("seeking") == False
-
-        return await self.wait_for(check)
-
-    async def wait_for_recording(self):
-        async def check():
-            res = await self.http.get(REPLAY_API_URL + "/recording")
-            return res.json().get("recording") == False
-
-        return await self.wait_for(check)
-
     async def open_replay(self, matchID: str) -> bool:
-        matchID = matchID.replace("NA1_", "")  # need to remove prefix since the LCU doesn't use them
         try:
-            await self.lcu.launch_replay(matchID)
-        except LCUMissingReplayMetadataException:
+            await self.replay.open(matchID)
+        except LCUMissingReplayMetadataException, LCUIncompatibleReplayException:
             self.reporter.message(f"[error]Unable to open replay for match {matchID}[/]")
             return False
 
         return True
 
-    async def close_active_replay(self):
-        if self.pid is not None:
-            os.kill(self.pid, signal.SIGTERM)
-
-    async def get_replay_pid(self) -> int:
-        data = await self.http.get(REPLAY_API_URL + "/game")
-        return data.json().get("processID")
-
-    async def pause(self):
-        res = await self.http.post(REPLAY_API_URL + "/playback", json={"paused": True})
-        res.raise_for_status()
-        return res.json()
-
-    async def resume(self):
-        res = await self.http.post(REPLAY_API_URL + "/playback", json={"paused": False})
-        res.raise_for_status()
-        return res.json()
-
-    async def seek_to(self, timestamp: float, buffer: float = DEFAULT_SEEK_BUFFER):
-        res = await self.http.post(REPLAY_API_URL + "/playback", json={"paused": True, "seeking": True, "speed": 1.0, "time": timestamp - buffer})
-        res.raise_for_status()
-        return res.json()
-
-    async def apply_sequence(self, sequence: dict):
-        res = await self.http.post(REPLAY_API_URL + "/sequence", json=sequence)
-        res.raise_for_status()
-        return res.json()
-
-    async def update_render_settings(self, **kwargs):
-        res = await self.http.post(REPLAY_API_URL + "/render", json=kwargs)
-        res.raise_for_status()
-        return res.json()
-
-    async def move_camera_to(self, x: float, y: float, fov: int = DEFAULT_CAMERA_FOV):
-        res = await self.http.post(
-            REPLAY_API_URL + "/render",
-            json={
-                "cameraPosition": {
-                    "x": x,
-                    "y": y,
-                },
-                "fieldOfView": fov,
-            },
-        )
-        res.raise_for_status()
-        return res.json()
-
-    async def track_player_with_camera(self):
-        name = self.__current_match.player.riotIdGameName
-        res = await self.http.post(
-            REPLAY_API_URL + "/render", json={"cameraMode": "fps", "cameraAttached": True, "selectionName": name, "selectionOffset": CAMERA_SELECTION_OFFSET}
-        )
-        res.raise_for_status()
-        return res.json()
-
-    async def hide_replay_ui(self):
-        data = {
-            "interfaceAll": True,
-            "interfaceAnnounce": True,
-            "interfaceChat": False,
-            "interfaceFrames": True,
-            "interfaceKillCallouts": True,
-            "interfaceMinimap": True,
-            "interfaceNeutralTimers": False,
-            "interfaceQuests": False,
-            "interfaceReplay": False,
-            "interfaceScore": True,
-            "interfaceScoreboard": False,
-            "interfaceTarget": False,
-            "interfaceTimeline": False,
-        }
-        res = await self.http.post(REPLAY_API_URL + "/render", json=data)
-        res.raise_for_status()
-        return res.json()
-
-    async def start_recording(
-        self,
-        file_path: str,
-        start_time: float,
-        end_time: float,
-        width: int = 2560,
-        height: int = 1440,
-        fps: int = 60,
-        lossless: bool = True,
-        codec: str = "webm",
-        enforce_frame_rate: bool = False,
-    ):
-        res = await self.http.post(
-            REPLAY_API_URL + "/recording",
-            json={
-                "recording": True,
-                "codec": codec,
-                "lossless": lossless,
-                "path": file_path,
-                "width": width,
-                "height": height,
-                "startTime": start_time,
-                "endTime": end_time,
-                "framesPerSecond": fps,
-                "enforceFrameRate": enforce_frame_rate,
-            },
-        )
-        res.raise_for_status()
-        return res.json()
-
-    async def stop_recording(self):
-        res = await self.http.post(REPLAY_API_URL + "/recording", json={"recording": False})
-        res.raise_for_status()
-
     async def record(self, events: list[HighlightEvent], numHighlights: int = None, index_offset: int = 0):
-        self.pid = await self.get_replay_pid()
+        api = self.replay.api
 
-        await self.pause()
+        await api.pause()
         await asyncio.sleep(REALITY_CHECK_BUFFER)
 
-        await self.hide_replay_ui()
+        await api.hide_ui()
 
         raw_highlight_paths = []
         for i, batch in enumerate(events):
@@ -392,16 +232,16 @@ class HighlightManager:
                 length = batch.event_length
                 end_time = timestamp + length + TRAIL_BUFFER
                 self.reporter.step("Seeking...")
-                await self.seek_to(timestamp)
+                await api.seek_to(timestamp)
 
                 self.reporter.step("Buffering...")
-                await self.wait_for_seek()
+                await api.wait_for_seek()
 
                 self.reporter.step("Tracking player...")
-                await self.track_player_with_camera()
+                await api.follow_player(self.__current_match.player.riotIdGameName)
 
                 self.reporter.step("Resuming playback...")
-                await self.resume()
+                await api.resume()
 
                 matchID = self.__current_match.matchId
                 file_name = f"highlight_{idx}.webm"
@@ -411,17 +251,17 @@ class HighlightManager:
 
                 self.reporter.step("Configuring recording...")
                 file_path = (file_dir / file_name).resolve()
-                await self.start_recording(file_path.as_posix(), start_time, end_time)
+                await api.start_recording(file_path.as_posix(), start_time, end_time, lossless=True)  # re-encoded by ffmpeg afterwards
 
                 self.reporter.step("Recording...")
-                await self.wait_for_recording()
+                await api.wait_for_recording()
 
             self.reporter.message(f"Captured highlight [highlights_match_id]{idx}[/]!")
             raw_highlight_paths.append(file_path)
 
         self.reporter.message(f"Done capturing highlights - exiting in {REALITY_CHECK_BUFFER} seconds...")
         await asyncio.sleep(REALITY_CHECK_BUFFER)
-        await self.close_active_replay()
+        await self.replay.close_active()
 
         self.reporter.message(f"Converting & compressing {len(raw_highlight_paths)} highlights...")
         await self.compress_many_highlights(raw_highlight_paths)
