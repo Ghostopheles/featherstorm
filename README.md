@@ -99,3 +99,6 @@ Using this system, you'll want to change the following default config values:
 - `companion.default_player_tagline`: Your summoner tagline (the thing after the #).
 
 You can view your current configuration with `featherstorm cfg view`.
+
+## AI Usage
+Parts of this project were written by Claude Code, but most of the code remains human-written.
