@@ -71,7 +71,7 @@ featherstorm/
 │   │   ├── cfg.py        # cfg_app
 │   │   ├── riot.py       # riot_app (matches, match, timeline, puuid, ranked, live-game)
 │   │   ├── highlights.py # highlights_app
-│   │   ├── replay.py     # replay_app (status, download, open, playback, pause, resume, seek, speed, hide-ui, follow, render, record start/stop/status)
+│   │   ├── replay.py     # replay_app (status, download, open, playback, pause, resume, toggle, seek, speed, hide-ui, follow, render, record start/stop/toggle/status)
 │   │   ├── crawler.py    # crawler_app (crawl, fetch, dataset, stats, export, schema, reset)
 │   │   └── dragon.py     # dragon_app (item, champion, art)
 │   ├── ui/               # Terminal rendering layer — the only place that writes to the console
@@ -141,11 +141,11 @@ uv run featherstorm riot live-game ["Name"] ["TAG"]   # currently ongoing match 
 uv run featherstorm highlights capture [--game-path P] [--export-path P] [--name N] [--tagline T] [--count N] [--pick]
                                   # --pick lists highlights (time + killed champs), captures the one you choose
 uv run featherstorm replay status|download|open [match_id]   # match_id optional (defaults to last LCU match); open has --wait/--no-wait
-uv run featherstorm replay playback|pause|resume|render|hide-ui
-uv run featherstorm replay seek <time>                 # 90, 1:30, 1m30s
+uv run featherstorm replay playback|pause|resume|toggle|render|hide-ui
+uv run featherstorm replay seek <time>                 # 90, 1:30, 1m30s, or relative +30 / -10 / -1m
 uv run featherstorm replay speed <x>
 uv run featherstorm replay follow <riot_id_game_name>
-uv run featherstorm replay record start [out] [--start T] [--end T | -d/--duration D] [--wait] | record stop | record status
+uv run featherstorm replay record start [out] [--start T] [--end T | -d/--duration D] [--wait] | record stop | record toggle [out] | record status
 uv run featherstorm crawler crawl [--count N] [--days N | --since YYYY-MM-DD --until YYYY-MM-DD | --all-time]
                                   [--queue ...] [--match-type ...] [--max-depth N] [--reset]
 uv run featherstorm crawler fetch [--count N] [--max-depth N] [--workers N]

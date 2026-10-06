@@ -106,11 +106,27 @@ class ReplayAPIClient:
     async def resume(self) -> dict:
         return await self.update_playback(paused=False)
 
+    async def toggle_playback(self) -> bool:
+        """Pauses if playing, resumes if paused. Returns the new paused state."""
+        paused = not (await self.get_playback()).get("paused")
+        await self.update_playback(paused=paused)
+        return paused
+
     async def set_speed(self, speed: float) -> dict:
         return await self.update_playback(speed=speed)
 
     async def seek_to(self, timestamp: float, buffer: float = DEFAULT_SEEK_BUFFER) -> dict:
         return await self.update_playback(paused=True, seeking=True, speed=1.0, time=timestamp - buffer)
+
+    async def seek_by(self, offset: float) -> float:
+        """Seeks `offset` seconds from the current time (negative goes back), clamped to the game length. Returns the target time."""
+        playback = await self.get_playback()
+        target = max(0.0, playback.get("time", 0) + offset)
+        length = playback.get("length")
+        if length is not None:
+            target = min(target, length)
+        await self.seek_to(target)
+        return target
 
     async def apply_sequence(self, sequence: dict) -> dict:
         return await self._request("POST", "/sequence", json=sequence)
@@ -164,3 +180,17 @@ class ReplayAPIClient:
 
     async def stop_recording(self) -> dict:
         return await self._request("POST", "/recording", json={"recording": False})
+
+    async def toggle_recording(self, file_path: Optional[str] = None, **kwargs) -> tuple[bool, dict]:
+        """Stops an active recording, otherwise records from the current time to the end of the game.
+        Returns `(started, state)` — `state` is the pre-stop recording state when stopping, so its `path` is still set."""
+        recording = await self.get_recording()
+        if recording.get("recording"):
+            await self.stop_recording()
+            return False, recording
+
+        playback = await self.get_playback()
+        # the Replay API only captures frames while the replay is playing
+        await self.resume()
+        state = await self.start_recording(file_path, playback.get("time", 0), playback.get("length"), **kwargs)
+        return True, state or {}

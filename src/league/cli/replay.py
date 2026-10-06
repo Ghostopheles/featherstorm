@@ -131,13 +131,32 @@ def replay_resume():
     _run_api(lambda api: api.resume())
 
 
-@app.command(name="seek", help="Seek the running replay to a time (e.g. 90, 1:30, 1m30s)")
+@app.command(name="toggle", help="Pause the running replay if playing, resume it if paused")
+def replay_toggle():
+    paused = _run_api(lambda api: api.toggle_playback())
+    output.success("Paused" if paused else "Resumed")
+
+
+# ignore_unknown_options lets negative offsets like `-10` through as the argument instead of being parsed as options
+@app.command(
+    name="seek",
+    help="Seek the running replay to a time (e.g. 90, 1:30, 1m30s), or by an offset with +/- (e.g. +30, -10, -1m)",
+    context_settings={"ignore_unknown_options": True},
+)
 def replay_seek(time: str):
-    seconds = _parse_time(time)
+    sign = time.strip()[:1]
+    offset = sign in ("+", "-")
+    seconds = _parse_time(time.strip()[1:] if offset else time)
+    if sign == "-":
+        seconds = -seconds
 
     async def run(api: ReplayAPIClient):
         was_paused = (await api.get_playback()).get("paused")
-        await api.seek_to(seconds)
+        if offset:
+            target = await api.seek_by(seconds)
+            output.print(f"Seeking to {target:.0f}s")
+        else:
+            await api.seek_to(seconds)
         await api.wait_for_seek()
         if not was_paused:
             await api.resume()
@@ -239,6 +258,32 @@ def record_stop():
 
         await api.stop_recording()
         output.success(f"Stopped recording to {recording.get('path')}")
+
+    _run_api(run)
+
+
+@record_app.command(name="toggle", help="Stop the current recording, or start one from the current time to the end of the game")
+def record_toggle(
+    out: Annotated[Optional[Path], typer.Argument(help="Output video file path when starting. Defaults to the game client's replay directory.")] = None,
+    width: int = 2560,
+    height: int = 1440,
+    fps: int = 60,
+    codec: str = "webm",
+    lossless: Annotated[bool, typer.Option("--lossless/--lossy", help="Lossless recordings are huge")] = False,
+):
+    if out is not None:
+        out = out.resolve()
+        out.parent.mkdir(parents=True, exist_ok=True)
+
+    async def run(api: ReplayAPIClient):
+        started, recording = await api.toggle_recording(
+            out.as_posix() if out is not None else None, width=width, height=height, fps=fps, lossless=lossless, codec=codec
+        )
+        if started:
+            destination = recording.get("path") or out or "the default replay directory"
+            output.success(f"Recording to {destination}")
+        else:
+            output.success(f"Stopped recording to {recording.get('path')}")
 
     _run_api(run)
 
